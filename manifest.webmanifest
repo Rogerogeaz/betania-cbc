@@ -1,6 +1,8 @@
+
 {
   "name": "Betania CBC System",
   "short_name": "Betania CBC",
+  "description": "Betania CBC student results management system",
   "start_url": "/betania-cbc/",
   "scope": "/betania-cbc/",
   "display": "standalone",
@@ -15,7 +17,7 @@
       "type": "image/png"
     },
     {
-      "src": "icon-512.png",
+      "src": "icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

@@ -1386,6 +1386,14 @@ window.addEventListener("load",()=>{
 
 </div> <!-- adminPanel -->
 </section> <!-- admin -->
+  <script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js");
+  });
+}
+  </script>
 
 </body>
+
 </html>

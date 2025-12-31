@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Betania CBC System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+section {
+  display: none;
+}
+
+section.active {
+  display: block;
+}
+
+/* ===== CLASS SUMMARY STYLES ===== */
+.overall-card{
+  border:2px solid #198754;
+  margin-top:12px;
+  padding:12px;
+  border-radius:10px;
+}
+
+.summary-box{
+  background:#f8f9fa;
+  padding:10px;
+  margin:8px 0;
+  border-radius:8px;
+  font-size:14px;
+}
+/* ===== HOME PAGE BACKGROUND (SAFE & ISOLATED) ===== */
+#home{
+  min-height:100vh;
+  background-image:url("https://i.ibb.co/nqcg4Gbn/1000025048.jpg");
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  padding:40px 20px;
+}
+
+/* HOME TEXT CONTENT */
+.home-content{
+  max-width:600px;
+  margin:120px auto 0;
+  background:rgba(255,255,255,0.92);
+  padding:30px;
+  border-radius:16px;
+  text-align:center;
+  box-shadow:0 10px 25px rgba(0,0,0,0.2);
+}
+
+.home-content h1{
+  font-size:28px;
+  font-weight:800;
+  margin-bottom:12px;
+}
+
+.home-content p{
+  font-size:16px;
+  line-height:1.6;
+}
+</style>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, getDocs, query, where,
+  doc, updateDoc, deleteDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAZwo5QfOCx-1eZmjzxjtgmjKA0jjL1uQs",
+  authDomain: "betania-school.firebaseapp.com",
+  projectId: "betania-school",
+};
+
+const app = initializeApp(firebaseConfig);
+window.db = getFirestore(app);
+const ADMIN_PIN="1234";
+
+
+const CBC={
+PP:["Language","Math Activities","Environmental","Creative"],
+G1_3:["English","Kiswahili","Mathematics","Environmental","Creative Arts","Religious Education"],
+G4_6:["English","Kiswahili","Mathematics","Science & Tech","Social Studies","Agriculture","Religious Education"],
+G7_9:["English","Kiswahili","Mathematics","Integrated Science","Social Studies","Agriculture","Pre-Technical Studies","Religious Education","Pastoral Religious Instruction","Creative Arts & Sports"]
+};
+
+function showSection(id){
+  document.querySelectorAll("section").forEach(s =>
+    s.classList.remove("active")
+  );
+  document.getElementById(id).classList.add("active");
+
+  if(id === "marks"){
+    const cls = document.getElementById("classSelect").value;
+    loadStudents(cls);
+  }
+
+  if(id === "results"){
+    loadResults();
+  }
+
+  if(id === "admin"){
+    if(adminPanel.style.display === "block"){
+      loadApprovals();
+      listStudents();
+    }
+  }
+}
+window.showSection = showSection;
+function group(cls){
+if(cls==="PP1"||cls==="PP2") return "PP";
+if(cls.includes("Grade 1")||cls.includes("Grade 2")||cls.includes("Grade 3")) return "G1_3";
+if(cls.includes("Grade 4")||cls.includes("Grade 5")||cls.includes("Grade 6")) return "G4_6";
+return "G7_9";
+}
+function finalCbcRemark(avg){
+  if(avg >= 80) return "Exceeding Expectations";
+  if(avg >= 60) return "Meeting Expectations";
+  if(avg >= 40) return "Approaching Expectations";
+  return "Below Expectations";
+}
+function loadSubjects(){
+  const cls = classSelect.value;
+  const area = document.getElementById("subjectsArea");
+  area.innerHTML = "";
+
+  if(!cls) return;
+
+  const subjects = CBC[group(cls)];
+
+  subjects.forEach(sub => {
+    area.innerHTML += `
+      <label>${sub}</label>
+      <input type="number" min="0" max="100" data-sub="${sub}">
+    `;
+  });
+
+  loadStudents(cls);
+}
+async function loadResults(){
+
+  // RESET VIEW  CLASS PERFORMANCE
+  document.getElementById("classChart").style.display = "block";
+  document.getElementById("classSummary").style.display = "block";
+
+  document.getElementById("studentChart").style.display = "none";
+  document.getElementById("studentTitle").style.display = "none";
+  document.getElementById("studentSummary").innerHTML = "";
+
+  const list = document.getElementById("resultsList");
+  const cls = resultsClassSelect.value;
+  const student = resultsStudentSelect.value;
+  list.innerHTML = "";
+
+  if(!cls){
+    list.innerHTML = "Select class";
+    return;
+  }
+
+  // always show class summary
+  drawClassSummary(cls);
+  list.innerHTML = "<p>Showing approved class performance summary.</p>";
+
+  // if a student is selected  show student performance
+  if(student){
+    drawStudentSummary(cls, student);
+  }
+}
+async function addStudent() {
+  const adm = document.getElementById("admissionNo").value.trim();
+  const name = document.getElementById("newStudent").value.trim();
+  const parent = document.getElementById("parentName").value.trim();
+  const phone = document.getElementById("parentPhone").value.trim();
+  const cls = document.getElementById("newClass").value;
+
+  if (!adm || !name || !parent || !phone || !cls) {
+    alert("Fill all student details");
+    return;
+  }
+
+  if(editingStudentId){
+  await updateDoc(doc(db,"students",editingStudentId),{
+    admissionNo: adm,
+    name: name,
+    parent: parent,
+    phone: phone,
+    class: cls
+  });
+  editingStudentId = null;
+}else{
+  await addDoc(collection(db,"students"), {
+    admissionNo: adm,
+    name: name,
+    parent: parent,
+    phone: phone,
+    class: cls,
+    createdAt: serverTimestamp()
+  });
+}
+
+  document.getElementById("admissionNo").value = "";
+  document.getElementById("newStudent").value = "";
+  document.getElementById("parentName").value = "";
+  document.getElementById("parentPhone").value = "";
+  document.getElementById("newClass").value = "";
+
+  listStudents();
+}
+
+async function listStudents(){
+  const list = document.getElementById("studentList");
+  list.innerHTML = "";
+
+  const snap = await getDocs(collection(db,"students"));
+
+  if(snap.empty){
+    list.innerHTML = "<p>No students registered.</p>";
+    return;
+  }
+
+  const grouped = {};
+
+  snap.forEach(d=>{
+    const s = d.data();
+    if(!grouped[s.class]) grouped[s.class] = [];
+    grouped[s.class].push({ id:d.id, ...s });
+  });
+
+  for(const cls in grouped){
+    const groupId = cls.replace(/\s+/g,"_");
+
+    list.innerHTML += `
+ <div class="class-header" onclick="toggleClass('${groupId}', this)">
+  <h4>${cls}</h4>
+  <span class="arrow">▶</span>
+</div>
+
+        <div id="${groupId}" class="students-group">
+          ${grouped[cls].map(s=>`
+            <div class="card">
+              <strong>${s.name}</strong><br>
+              Admission No: ${s.admissionNo}<br>
+              Parent: ${s.parent}<br>
+              Phone: ${s.phone}<br><br>
+
+              <button onclick="editStudent(
+                '${s.id}',
+                '${s.admissionNo}',
+                '${s.name}',
+                '${s.parent}',
+                '${s.phone}',
+                '${s.class}'
+              )">Edit</button>
+
+              <button onclick="deleteStudent('${s.id}')">
+                Delete
+              </button>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+}
+async function loadStudents(cls){
+  const sel=document.getElementById("studentSelect");
+  sel.innerHTML=`<option value="">-- Select Student --</option>`;
+  if(!cls) return;
+
+  const q=query(collection(db,"students"),where("class","==",cls));
+  const snap=await getDocs(q);
+
+  snap.forEach(d=>{
+    sel.innerHTML+=`<option>${d.data().name}</option>`;
+  });
+}
+
+async function saveMarks(){
+  const year=yearSelect.value;
+  const term=termSelect.value;
+  const student=studentSelect.value;
+  const cls=classSelect.value;
+
+  if(!year||!term||!cls||!student){
+    alert("Select all fields");
+    return;
+  }
+
+  const subjects=[];
+  document.querySelectorAll("#subjectsArea input").forEach(i=>{
+    subjects.push({
+      subject:i.dataset.sub,
+      marks:Number(i.value),
+      remark:cbcRemark(i.value)
+    });
+  });
+
+  await addDoc(collection(db,"results"),{
+    student,class:cls,year,term,subjects,
+    status:"SUBMITTED",
+    createdAt:serverTimestamp()
+  });
+
+  alert("Results submitted for approval");
+  //  AUTO CLEAR ENTER MARKS FORM
+document.getElementById("studentSelect").value = "";
+document.getElementById("subjectsArea").innerHTML = "";
+}
+
+
+
+function checkPin(){
+if(adminPin.value===ADMIN_PIN){
+adminLogin.style.display="none";
+adminPanel.style.display="block";
+loadApprovals();
+listStudents();
+}else pinError.innerText="Wrong PIN";
+}
+
+async function deleteStudent(id){
+  if(!confirm("Delete this student?")) return;
+  await deleteDoc(doc(db,"students",id));
+  listStudents();
+}
+let editingStudentId = null;
+
+function editStudent(id, adm, name, parent, phone, cls){
+  editingStudentId = id;
+
+  document.getElementById("admissionNo").value = adm;
+  document.getElementById("newStudent").value = name;
+  document.getElementById("parentName").value = parent;
+  document.getElementById("parentPhone").value = phone;
+  document.getElementById("newClass").value = cls;
+
+  alert("Edit the fields then click SAVE STUDENT");
+}
+function cbcRemark(mark){
+  mark = Number(mark);
+  if(mark >= 80) return "Exceeding Expectations";
+  if(mark >= 60) return "Meeting Expectations";
+  if(mark >= 40) return "Approaching Expectations";
+  return "Below Expectations";
+}
+
+async function loadApprovals(){
+  const area = document.getElementById("approvalList");
+  area.innerHTML = "";
+
+  const q = query(
+    collection(db,"results"),
+    where("status","==","SUBMITTED")
+  );
+
+  const snap = await getDocs(q);
+
+  if(snap.empty){
+    area.innerHTML = "<p>No pending approvals.</p>";
+    return;
+  }
+
+  snap.forEach(d=>{
+    const r = d.data();
+
+    area.innerHTML += `
+      <div class="card">
+        <strong>${r.student}</strong><br>
+        Class: ${r.class}<br>
+        Term: ${r.term} ${r.year}<br><br>
+
+        <button onclick="viewSubmittedResult('${d.id}')">
+          👁 View Result
+        </button>
+
+        <button onclick="approveResult('${d.id}')">
+          ✅ Approve
+        </button>
+      </div>
+    `;
+  });
+}
+
+async function approveResult(id){
+  await updateDoc(doc(db,"results",id),{
+    status: "APPROVED",
+    teacherSmsAllowed: true,
+    smsSent: false
+  });
+
+  loadApprovals();
+}
+
+
+async function loadResultsStudents(cls){
+  const sel = document.getElementById("resultsStudentSelect");
+  sel.innerHTML = `<option value="">-- All Students --</option>`;
+  if(!cls) return;
+
+  const q = query(collection(db,"students"), where("class","==",cls));
+  const snap = await getDocs(q);
+
+  snap.forEach(d=>{
+    sel.innerHTML += `<option>${d.data().name}</option>`;
+  });
+}
+
+// ===== CLASS SUMMARY & CHART =====
+let classChartInstance = null;
+
+async function drawClassSummary(cls){
+  const statsDiv = document.getElementById("classStats");
+  const bestSubjectEl = document.getElementById("bestSubject");
+  const bestStudentEl = document.getElementById("bestStudent");
+
+  statsDiv.innerHTML = "";
+  bestSubjectEl.innerHTML = "";
+  bestStudentEl.innerHTML = "";
+
+  const q = query(
+    collection(db,"results"),
+    where("class","==",cls),
+    where("status","==","APPROVED")
+  );
+
+  const snap = await getDocs(q);
+  if(snap.empty){
+    statsDiv.innerHTML = "<p>No approved results.</p>";
+    return;
+  }
+
+  const subjectTotals = {};
+  const subjectCounts = {};
+  const studentTotals = {};
+  const studentCounts = {};
+
+  snap.forEach(docSnap=>{
+    const r = docSnap.data();
+
+    if(!studentTotals[r.student]){
+      studentTotals[r.student] = 0;
+      studentCounts[r.student] = 0;
+    }
+
+    r.subjects.forEach(s=>{
+      subjectTotals[s.subject] = (subjectTotals[s.subject] || 0) + s.marks;
+      subjectCounts[s.subject] = (subjectCounts[s.subject] || 0) + 1;
+
+      studentTotals[r.student] += s.marks;
+      studentCounts[r.student] += 1;
+    });
+  });
+
+  let bestSub = "";
+  let bestSubAvg = 0;
+
+  const labels = [];
+  const averages = [];
+
+  for(const sub in subjectTotals){
+    const avg = Math.round(subjectTotals[sub] / subjectCounts[sub]);
+    labels.push(sub);
+    averages.push(avg);
+
+    statsDiv.innerHTML += `
+      <p><strong>${sub}</strong>: ${avg}% � ${finalCbcRemark(avg)}</p>
+    `;
+
+    if(avg > bestSubAvg){
+      bestSubAvg = avg;
+      bestSub = sub;
+    }
+  }
+
+  let bestStu = "";
+  let classTotal = 0;
+let classCount = 0;
+  let bestStuAvg = 0;
+
+  for(const stu in studentTotals){
+    const avg = Math.round(studentTotals[stu] / studentCounts[stu]);
+    if(avg > bestStuAvg){
+      bestStuAvg = avg;
+      bestStu = stu;
+    }
+  }
+
+
+for(const stu in studentTotals){
+  classTotal += studentTotals[stu];
+  classCount += studentCounts[stu];
+}
+
+const classAvg = Math.round(classTotal / classCount);
+
+statsDiv.innerHTML += `
+  <hr>
+  <p><strong>Overall Class Average:</strong> ${classAvg}%</p>
+  <p><strong>Overall CBC Remark:</strong> ${finalCbcRemark(classAvg)}</p>
+`;
+  bestSubjectEl.innerHTML = `
+  <div class="summary-box">
+    🏆 <strong>Best Subject:</strong> ${bestSub} (${bestSubAvg}%)
+  </div>
+`;
+
+bestStudentEl.innerHTML = `
+  <div class="summary-box">
+    👩‍🎓 <strong>Best Student:</strong> ${bestStu} (${bestStuAvg}%)
+  </div>
+`;
+
+  if(classChartInstance) classChartInstance.destroy();
+
+  const colors = [
+  "#0d6efd", "#198754", "#ffc107",
+  "#dc3545", "#6f42c1", "#20c997",
+  "#fd7e14", "#0dcaf0", "#6610f2"
+];
+
+classChartInstance = new Chart(
+  document.getElementById("classChart").getContext("2d"),
+  {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Class Subject Averages (%)",
+          data: averages,
+          backgroundColor: colors.slice(0, labels.length)
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100
+        }
+      }
+    }
+  }
+);
+}
+
+// ===== GRADE CALCULATION =====
+function gradeFromMark(mark){
+  if(mark >= 80) return "A";
+  if(mark >= 70) return "B";
+  if(mark >= 60) return "C";
+  if(mark >= 50) return "D";
+  return "E";
+}
+let studentChartInstance = null;
+
+async function drawStudentSummary(cls, studentName) {
+  const studentTitle = document.getElementById("studentTitle");
+  const studentSummary = document.getElementById("studentSummary");
+  const studentChart = document.getElementById("studentChart");
+
+  // hide class performance
+  document.getElementById("classChart").style.display = "none";
+  document.getElementById("classSummary").style.display = "none";
+
+  studentTitle.style.display = "block";
+  studentChart.style.display = "block";
+  studentSummary.innerHTML = "";
+
+  const q = query(
+    collection(db, "results"),
+    where("class", "==", cls),
+    where("student", "==", studentName),
+    where("status", "==", "APPROVED")
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) {
+    studentSummary.innerHTML = "<p>No approved results.</p>";
+    return;
+  }
+
+  const r = snap.docs[0].data();
+  // SAVE SMS PERMISSION STATE
+window.currentTeacherSmsAllowed = r.teacherSmsAllowed === true;
+window.currentSmsSent = r.smsSent === true;
+updateSmsButtons();
+
+// fetch admission + parent phone
+const admissionNo = await getAdmissionNumber(studentName, cls);
+const parentPhone = await getParentPhone(studentName, cls);
+
+window.currentAdmissionNo = admissionNo;
+window.currentParentPhone = parentPhone;
+
+  let total = 0;
+  const labels = [];
+  const marks = [];
+  const colors = [
+    "#0d6efd", "#198754", "#ffc107",
+    "#dc3545", "#6f42c1", "#20c997",
+    "#fd7e14", "#0dcaf0"
+  ];
+
+  r.subjects.forEach(s => {
+    total += s.marks;
+    labels.push(s.subject);
+    marks.push(s.marks);
+
+    const grade =
+      s.marks >= 80 ? "A" :
+      s.marks >= 60 ? "B" :
+      s.marks >= 40 ? "C" : "D";
+
+    studentSummary.innerHTML += `
+      <p>
+        <strong>${s.subject}</strong> :
+        ${s.marks}% | Grade: ${grade} |
+        ${cbcRemark(s.marks)}
+      </p>
+    `;
+  });
+
+  const avg = Math.round(total / r.subjects.length);
+  // SAVE CURRENT STUDENT DATA FOR SMS
+window.currentStudentAverage = avg;
+window.currentStudentRemark = finalCbcRemark(avg);
+window.currentResultApproved = true; // because we only load APPROVED results here
+
+  studentSummary.innerHTML += `
+    <hr>
+    <p><strong>Total Marks:</strong> ${total}</p>
+    <p><strong>Average:</strong> ${avg}%</p>
+    <p><strong>Overall CBC Remark:</strong> ${finalCbcRemark(avg)}</p>
+  `;
+
+  if (studentChartInstance) studentChartInstance.destroy();
+
+  studentChartInstance = new Chart(studentChart.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: `${studentName} Performance`,
+        data: marks,
+        backgroundColor: colors
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true, max: 100 }
+      }
+    }
+  });
+}
+function toggleClass(id){
+  const el = document.getElementById(id);
+  el.style.display = el.style.display === "none" ? "block" : "none";
+}
+// ===== GET ADMISSION NUMBER (TOP-LEVEL) =====
+async function getAdmissionNumber(studentName, cls){
+  const q = query(
+    collection(db,"students"),
+    where("name","==",studentName),
+    where("class","==",cls)
+  );
+
+  const snap = await getDocs(q);
+  if(snap.empty) return "";
+
+  return snap.docs[0].data().admissionNo || "";
+}
+// ===== GET PARENT PHONE (TOP-LEVEL) =====
+async function getParentPhone(studentName, cls){
+  const q = query(
+    collection(db,"students"),
+    where("name","==",studentName),
+    where("class","==",cls)
+  );
+
+  const snap = await getDocs(q);
+  if(snap.empty) return "";
+
+  return snap.docs[0].data().phone || "";
+}
+window.printResultSlip = async function(){
+
+  const cls = resultsClassSelect.value;
+  const student = resultsStudentSelect.value;
+  const term = resultsTermSelect.value;
+  const year = resultsYearSelect.value;
+
+  const admissionNo = await getAdmissionNumber(student, cls);
+  
+  if (!cls || !student || !term || !year) {
+    alert("Select Class, Student, Term and Year");
+    return;
+  }
+
+  const content = document.getElementById("studentSummary").innerHTML;
+  if (!content.trim()) {
+    alert("No student result to print");
+    return;
+  }
+
+  const today = new Date().toLocaleDateString();
+  const printWindow = window.open("", "", "width=900,height=650");
+
+  printWindow.document.write(`
+    <html>
+    <head>
+      <title>Result Slip</title>
+      <style>
+        body { font-family: Arial; padding: 20px; }
+        .header { text-align: center; }
+        .header img { height: 90px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #000; padding: 6px; text-align: center; }
+        .footer { margin-top: 40px; display: flex; justify-content: space-between; }
+        .signature { border-top: 1px solid #000; width: 200px; text-align: center; }
+        /* ===== HOME BUTTONS ===== */
+.home-grid{
+  display:grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap:18px;
+  margin-top:20px;
+}
+
+.home-btn{
+  background:#0b5ed7;
+  color:#fff;
+  border:none;
+  border-radius:14px;
+  padding:22px 10px;
+  font-size:15px;
+  font-weight:600;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  box-shadow:0 6px 15px rgba(0,0,0,0.15);
+  transition:0.25s ease;
+}
+
+.home-btn span{
+  font-size:32px;
+}
+
+.home-btn:hover{
+  transform:translateY(-3px);
+  background:#094bb5;
+}
+
+.home-btn:active{
+  transform:scale(0.97);
+}
+      </style>
+    </head>
+
+    <body>
+      <div class="header">
+        <img src="https://i.ibb.co/rK3pvG23/1000020144.jpg">
+        <h2>BETANIA SCHOOL</h2>
+        <strong>MOTTO: KNOWLEDGE WITH CONSCIENCE</strong><br>
+        CONTACT: 0793 845 653 — Emali / Kajiado
+      </div>
+
+      <hr>
+
+      <p><strong>Student:</strong> ${student}</p>
+<p><strong>Admission No:</strong> ${admissionNo}</p>
+<p><strong>Class:</strong> ${cls}</p>
+      <p><strong>Term:</strong> ${term} | <strong>Year:</strong> ${year}</p>
+
+      ${content}
+
+      <div class="footer">
+        <div class="signature">Headteacher</div>
+        <div class="signature">Date: ${today}</div>
+      </div>
+    </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+};
+async function sendResultSMS(role){
+
+  // 🔐 HEADTEACHER PIN CHECK (ONLY FOR HEADTEACHER BUTTON)
+  if (role === "headteacher") {
+    const HEADTEACHER_PIN = "1234"; // change later if needed
+    const pin = prompt("Enter Headteacher PIN");
+
+    if (pin !== HEADTEACHER_PIN) {
+      alert("Wrong PIN. SMS not sent.");
+      return;
+    }
+  }
+
+  const student = resultsStudentSelect.value;
+  const cls = resultsClassSelect.value;
+  const year = resultsYearSelect.value;
+  const term = resultsTermSelect.value;
+
+  if(!student || !cls || !year || !term){
+    alert("Select class, student, term and year");
+    return;
+  }
+
+  const q = query(
+    collection(db,"results"),
+    where("student","==",student),
+    where("class","==",cls),
+    where("status","==","APPROVED")
+  );
+
+  const snap = await getDocs(q);
+  if(snap.empty){
+    alert("Approved result not found");
+    return;
+  }
+
+  const docRef = doc(db,"results", snap.docs[0].id);
+  const data = snap.docs[0].data();
+
+  // ⛔ IF SMS ALREADY SENT → STOP
+  if(data.smsSent === true){
+    alert("SMS already sent for this result.");
+    return;
+  }
+
+  const message =
+`BETANIA SCHOOL
+Student: ${student}
+ADM: ${window.currentAdmissionNo}
+Class: ${cls}
+Term: ${term} ${year}
+
+Average: ${window.currentStudentAverage}%
+CBC Remark: ${window.currentStudentRemark}`;
+
+  window.location.href =
+    "sms:" + window.currentParentPhone + "?body=" + encodeURIComponent(message);
+
+  await updateDoc(docRef,{ smsSent:true });
+}
+function updateSmsButtons(){
+  const teacherBtn = document.getElementById("teacherSmsBtn");
+  const headBtn = document.getElementById("headSmsBtn");
+
+  if(window.currentSmsSent){
+    if(teacherBtn){
+      teacherBtn.disabled = true;
+      teacherBtn.innerText = "✔ SMS SENT";
+    }
+    if(headBtn){
+      headBtn.disabled = true;
+      headBtn.innerText = "✔ SMS SENT";
+    }
+  }
+}
+async function viewSubmittedResult(resultId){
+  const ref = doc(db,"results", resultId);
+  const snap = await getDocs(query(
+    collection(db,"results"),
+    where("__name__","==",resultId)
+  ));
+
+  if(snap.empty){
+    alert("Result not found");
+    return;
+  }
+
+  const r = snap.docs[0].data();
+
+  let html = `
+    <h3>${r.student}</h3>
+    <p><strong>Class:</strong> ${r.class}</p>
+    <p><strong>Term:</strong> ${r.term} ${r.year}</p>
+    <hr>
+  `;
+
+  let total = 0;
+
+  r.subjects.forEach(s=>{
+    total += s.marks;
+    html += `
+      <p>
+        <strong>${s.subject}</strong> :
+        ${s.marks}% — ${cbcRemark(s.marks)}
+      </p>
+    `;
+  });
+
+  const avg = Math.round(total / r.subjects.length);
+
+  html += `
+    <hr>
+    <p><strong>Average:</strong> ${avg}%</p>
+    <p><strong>CBC Remark:</strong> ${finalCbcRemark(avg)}</p>
+  `;
+
+  const w = window.open("", "", "width=600,height=600");
+  w.document.write(`
+    <html>
+    <head>
+      <title>View Submitted Result</title>
+      <style>
+        body{font-family:Arial;padding:20px}
+        h3{text-align:center}
+      </style>
+    </head>
+    <body>
+      ${html}
+    </body>
+    </html>
+  `);
+  w.document.close();
+}
+
+// ===== EXPOSE FUNCTIONS TO HTML (REQUIRED FOR onclick) =====
+window.showSection = showSection;
+window.loadSubjects = loadSubjects;
+window.saveMarks = saveMarks;
+window.checkPin = checkPin;
+window.addStudent = addStudent;
+window.deleteStudent = deleteStudent;
+window.loadResults = loadResults;
+window.loadResultsStudents = loadResultsStudents;
+window.approveResult = approveResult;
+window.drawClassSummary = drawClassSummary;
+window.drawStudentSummary = drawStudentSummary;
+window.editStudent = editStudent;
+window.toggleClass = toggleClass;
+window.sendResultSMS = sendResultSMS;
+window.viewSubmittedResult = viewSubmittedResult;
+</script>
+<style>
+body{
+  font-family: Arial, sans-serif;
+  margin:0;
+  background:#f4f6f8;
+}
+header{
+  background:#0b5ed7;
+  color:#fff;
+  text-align:center;
+  padding:15px;
+}
+nav{
+  display:flex;
+  justify-content:space-around;
+  background:#fff;
+  padding:10px;
+  border-bottom:1px solid #ddd;
+}
+nav button{
+  padding:10px;
+  border:none;
+  background:#0b5ed7;
+  color:#fff;
+  border-radius:5px;
+}
+section{display:none;padding:15px;}
+section.active{display:block;}
+.card{
+  background:#fff;
+  padding:15px;
+  border-radius:8px;
+  margin-bottom:15px;
+}
+input,select{
+  width:100%;
+  padding:8px;
+  margin:6px 0 12px;
+}
+button{cursor:pointer;}
+#studentList h4{
+  margin:0;
+  padding:5px 0;
+  color:#0b5ed7;
+}
+.class-header{
+  cursor:pointer;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.class-header span{
+  font-size:14px;
+  color:#6c757d;
+}
+
+.students-group{
+  display:none;
+  margin-left:10px;
+}
+/* ===== CLEAN SELECT DROPDOWN ICON (FIX UGLY ARROWS) ===== */
+select{
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #0b5ed7 50%),
+    linear-gradient(135deg, #0b5ed7 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 55%,
+    calc(100% - 12px) 55%;
+  background-size:
+    6px 6px,
+    6px 6px;
+  background-repeat: no-repeat;
+
+  padding-right: 35px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  height: 42px;
+  font-size: 15px;
+}
+
+select:focus{
+  outline: none;
+  border-color: #0b5ed7;
+  box-shadow: 0 0 0 2px rgba(11,94,215,0.15);
+}
+</style>
+</head>
+
+<body>
+<!-- ===== SPLASH + TITLE BAR (PREMIUM BLOCK) ===== -->
+
+<style>
+/* ===== SPLASH SCREEN ===== */
+#splashScreen{
+  position:fixed;
+  inset:0;
+  background:linear-gradient(135deg,#0b5ed7,#198754);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+
+.splash-content{
+  text-align:center;
+  color:#fff;
+  animation:splashAnim 2.2s ease forwards;
+}
+
+.splash-content img{
+  width:130px;
+  margin-bottom:14px;
+}
+
+.splash-content h1{
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:1px;
+}
+
+.splash-content p{
+  font-size:14px;
+  opacity:0.9;
+}
+
+@keyframes splashAnim{
+  from{opacity:0; transform:scale(0.6);}
+  to{opacity:1; transform:scale(1);}
+}
+
+/* ===== TITLE BAR ===== */
+.title-bar{
+  position:sticky;
+  top:0;
+  z-index:1000;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:12px 16px;
+  background:#ffffff;
+  border-bottom:4px solid #0b5ed7;
+  box-shadow:0 4px 14px rgba(0,0,0,0.15);
+}
+
+.title-bar img{
+  width:55px;
+  height:55px;
+  border-radius:10px;
+}
+
+.title-text h1{
+  margin:0;
+  font-size:18px;
+  font-weight:800;
+}
+
+.title-text .motto{
+  font-size:13px;
+  color:#198754;
+  font-weight:600;
+}
+
+.title-text .contact{
+  font-size:12px;
+  color:#555;
+}
+</style>
+
+<!-- SPLASH -->
+<div id="splashScreen">
+  <div class="splash-content">
+    <img src="https://i.ibb.co/nsXTJsbX/1000025628.jpg">
+    <h1>BETANIA CBC SYSTEM</h1>
+    <p>Knowledge With Conscience</p>
+  </div>
+</div>
+
+<!-- TITLE BAR -->
+<header class="title-bar">
+  <img src="https://i.ibb.co/4ZbM8KnW/1000020144.jpg">
+  <div class="title-text">
+    <h1>BETANIA SCHOOL</h1>
+    <div class="motto">KNOWLEDGE WITH CONSCIENCE</div>
+    <div class="contact">0793 845 653 · Emali / Kajiado</div>
+  </div>
+</header>
+
+<script>
+window.addEventListener("load",()=>{
+  setTimeout(()=>{
+    document.getElementById("splashScreen").style.display="none";
+  },2300);
+});
+</script>
+
+<!-- ===== END BLOCK ===== -->
+</script>
+
+<header>
+<h2>BETANIA SCHOOL</h2>
+<p>CBC Results System</p>
+</header>
+
+<nav class="top-nav">
+  <button onclick="showSection('home')">
+    🏠 Home
+  </button>
+
+  <button onclick="showSection('marks')">
+    ✏️ Enter Marks
+  </button>
+
+  <button onclick="showSection('results')">
+    📊 Results
+  </button>
+
+  <button onclick="showSection('admin')">
+    🔐 Admin
+  </button>
+</nav>
+
+<!-- HOME -->
+<!-- HOME -->
+<section id="home" class="active">
+  <div class="home-welcome">
+    <h1>Welcome to Betania CBC Results System</h1>
+    <p>Choose an option above to continue</p>
+  </div>
+
+  <style>
+    #home{
+      min-height: 70vh;
+    }
+
+    .home-welcome{
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      text-align:center;
+      padding:20px;
+    }
+
+    .home-welcome h1{
+      font-size:28px;
+      font-weight:800;
+      color:#0d6efd;
+      margin-bottom:12px;
+    }
+
+    .home-welcome p{
+      font-size:16px;
+      color:#555;
+    }
+  </style>
+</section>
+<!-- MARKS -->
+<section id="marks">
+<div class="card">
+<h3>Enter Marks</h3>
+<label>Academic Year</label>
+<select id="yearSelect">
+  <option value="">-- Select Year --</option>
+  <option>2026</option>
+  <option>2027</option>
+  <option>2028</option>
+  <option>2029</option>
+  <option>2030</option>
+</select>
+
+<label>Term</label>
+<select id="termSelect">
+  <option value="">-- Select Term --</option>
+  <option>Term 1</option>
+  <option>Term 2</option>
+  <option>Term 3</option>
+</select>
+
+<label>Class</label>
+<select id="classSelect" onchange="loadSubjects()">
+<option value="">-- Select Class --</option>
+<option>PP1</option><option>PP2</option>
+<option>Grade 1</option><option>Grade 2</option><option>Grade 3</option>
+<option>Grade 4</option><option>Grade 5</option><option>Grade 6</option>
+<option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
+</select>
+
+<label>Student</label>
+<select id="studentSelect"></select>
+
+<div id="subjectsArea"></div>
+
+<button onclick="saveMarks()">Save Marks</button>
+</div>
+</section>
+
+<!-- RESULTS -->
+<section id="results">
+<div class="card">
+  <h3>Approved Results</h3>
+  <label>Academic Year</label>
+<select id="resultsYearSelect">
+  <option value="">-- Select Year --</option>
+  <option>2026</option>
+  <option>2027</option>
+  <option>2028</option>
+  <option>2029</option>
+  <option>2030</option>
+</select>
+
+<label>Term</label>
+<select id="resultsTermSelect">
+  <option value="">-- Select Term --</option>
+  <option>Term 1</option>
+  <option>Term 2</option>
+  <option>Term 3</option>
+</select>
+
+  <label>Filter by Class</label>
+  <select id="resultsClassSelect"
+    onchange="loadResultsStudents(this.value); loadResults()">
+    <option value="">-- Select Class --</option>
+    <option>PP1</option><option>PP2</option>
+    <option>Grade 1</option><option>Grade 2</option><option>Grade 3</option>
+    <option>Grade 4</option><option>Grade 5</option><option>Grade 6</option>
+    <option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
+  </select>
+
+  <label>Select Student</label>
+  <select id="resultsStudentSelect" onchange="loadResults()">
+    <option value="">-- All Students --</option>
+  </select>
+
+  <div id="resultsList"></div>
+  
+</div>
+
+<!-- ===== CLASS PERFORMANCE (DEFAULT VIEW) ===== -->
+<div id="classSummary" class="card">
+  <h4>Class Performance Summary</h4>
+
+  <canvas id="classChart" height="200"></canvas>
+
+  <div id="classStats"></div>
+
+  <div id="overallStats" class="card overall-card">
+    <h4>📊 Overall Performance</h4>
+
+    <div id="bestSubject"></div>
+    <div id="bestStudent"></div>
+  </div>
+</div>
+
+<!-- ===== STUDENT PERFORMANCE (ON STUDENT SELECT) ===== -->
+<div class="card">
+  <h4 id="studentTitle" style="display:none;">Student Performance Summary</h4>
+  <canvas id="studentChart" height="200" style="display:none;"></canvas>
+  <div id="studentSummary"></div>
+  <button onclick="printResultSlip()" class="print-btn">
+  🖨️ Print Result Slip
+</button>
+  
+</div>
+<button onclick="sendResultSMS('teacher')" style="
+  background:#0d6efd;
+  color:white;
+  padding:10px;
+  width:100%;
+  border:none;
+  border-radius:5px;
+  margin-top:10px;
+  font-weight:bold;
+">
+📩 Send SMS (Teacher)
+</button>
+
+<button onclick="sendResultSMS('headteacher')" style="
+  background:#198754;
+  color:white;
+  padding:10px;
+  width:100%;
+  border:none;
+  border-radius:5px;
+  margin-top:8px;
+  font-weight:bold;
+">
+📩 Send SMS (Headteacher)
+</button>
+
+</section>
+
+<!-- ADMIN -->
+<section id="admin">
+<div class="card" id="adminLogin">
+<h3>Admin Login</h3>
+<input type="password" id="adminPin" placeholder="Enter PIN">
+<button onclick="checkPin()">Login</button>
+<p id="pinError" style="color:red;"></p>
+</div>
+
+<div class="card" id="adminPanel" style="display:none;">
+<h3>Admin Panel</h3>
+
+<h4>Pending Approvals</h4>
+<div id="approvalList"></div>
+
+<h4>Student Register</h4>
+<input type="text" id="admissionNo" placeholder="Admission Number">
+
+<input type="text" id="newStudent" placeholder="Student Name">
+
+<input type="text" id="parentName" placeholder="Parent / Guardian Name">
+
+<input type="tel" id="parentPhone" placeholder="Parent Phone Number">
+
+<select id="newClass">
+  <option value="">-- Class --</option>
+  <option>PP1</option>
+  <option>PP2</option>
+  <option>Grade 1</option>
+  <option>Grade 2</option>
+  <option>Grade 3</option>
+  <option>Grade 4</option>
+  <option>Grade 5</option>
+  <option>Grade 6</option>
+  <option>Grade 7</option>
+  <option>Grade 8</option>
+  <option>Grade 9</option>
+</select>
+
+<button type="button" onclick="addStudent()">Save Student</button>
+
+<h4>Registered Students</h4>
+<div id="studentList"></div>
+
+</div> <!-- adminPanel -->
+</section> <!-- admin -->
+
+</body>
+</html>

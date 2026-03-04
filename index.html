@@ -769,7 +769,7 @@ window.currentResultApproved = true; // because we only load APPROVED results he
     }
   });
 }
-function toggleClass(id){
+  function toggleClass(id){
   const el = document.getElementById(id);
   el.style.display = el.style.display === "none" ? "block" : "none";
 }
@@ -830,4 +830,490 @@ window.printResultSlip = async function(){
         body { font-family: Arial; padding: 20px; }
         .header { text-align: center; }
         .header img { height: 90px; }
-        table { width: 100%; border-collapse: collapse; mar
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #000; padding: 6px; text-align: center; }
+        .footer { margin-top: 40px; display: flex; justify-content: space-between; }
+        .signature { border-top: 1px solid #000; width: 200px; text-align: center; }
+        
+      </style>
+    </head>
+
+    <body>
+      <div class="header">
+        <img src="https://i.ibb.co/rK3pvG23/1000020144.jpg">
+        <h2>BETANIA SCHOOL</h2>
+        <strong>MOTTO: KNOWLEDGE WITH CONSCIENCE</strong><br>
+        CONTACT: 0793 845 653 — Emali / Kajiado
+      </div>
+
+      <hr>
+
+      <p><strong>Student:</strong> ${student}</p>
+<p><strong>Admission No:</strong> ${admissionNo}</p>
+<p><strong>Class:</strong> ${cls}</p>
+      <p><strong>Term:</strong> ${term} | <strong>Year:</strong> ${year}</p>
+
+      ${content}
+
+      <div class="footer">
+        <div class="signature">Headteacher</div>
+        <div class="signature">Date: ${today}</div>
+      </div>
+    </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+};
+// ===== EXPOSE FUNCTIONS TO HTML =====
+window.showSection = showSection;
+window.checkPin = checkPin;
+window.loadSubjects = loadSubjects;
+window.loadStudents = loadStudents;
+window.loadResults = loadResults;
+window.saveMarks = saveMarks;
+window.deleteStudent = deleteStudent;
+window.editStudent = editStudent;
+window.loadResultsStudents = loadResultsStudents;
+window.sendResultSMS = sendResultSMS;
+window.printResultSlip = printResultSlip;
+
+async function sendResultSMS(role){
+
+  // 🔐 HEADTEACHER PIN CHECK (ONLY FOR HEADTEACHER BUTTON)
+  if (role === "headteacher") {
+    const HEADTEACHER_PIN = "1234"; // change later if needed
+    const pin = prompt("Enter Headteacher PIN");
+
+    if (pin !== HEADTEACHER_PIN) {
+      alert("Wrong PIN. SMS not sent.");
+      return;
+    }
+  }
+
+  const student = resultsStudentSelect.value;
+  const cls = resultsClassSelect.value;
+  const year = resultsYearSelect.value;
+  const term = resultsTermSelect.value;
+
+  if(!student || !cls || !year || !term){
+    alert("Select class, student, term and year");
+    return;
+  }
+
+  const q = query(
+    collection(db,"results"),
+    where("student","==",student),
+    where("class","==",cls),
+    where("status","==","APPROVED")
+  );
+
+  const snap = await getDocs(q);
+  if(snap.empty){
+    alert("Approved result not found");
+    return;
+  }
+
+  const docRef = doc(db,"results", snap.docs[0].id);
+  const data = snap.docs[0].data();
+
+  // ⛔ IF SMS ALREADY SENT → STOP
+  if(data.smsSent === true){
+    alert("SMS already sent for this result.");
+    return;
+  }
+
+  const message =
+`BETANIA SCHOOL
+Student: ${student}
+ADM: ${window.currentAdmissionNo}
+Class: ${cls}
+Term: ${term} ${year}
+
+Average: ${window.currentStudentAverage}%
+CBC Remark: ${window.currentStudentRemark}`;
+
+  window.open(
+  "sms:" + window.currentParentPhone +
+  "?body=" + encodeURIComponent(message),
+  "_blank"
+);
+
+  await updateDoc(docRef,{ smsSent:true });
+updateSmsButtons();
+}
+function updateSmsButtons(){
+  const teacherBtn = document.getElementById("teacherSmsBtn");
+  const headBtn = document.getElementById("headSmsBtn");
+
+  if(window.currentSmsSent){
+    if(teacherBtn){
+      teacherBtn.disabled = true;
+      teacherBtn.innerText = "✔ SMS SENT";
+    }
+    if(headBtn){
+      headBtn.disabled = true;
+      headBtn.innerText = "✔ SMS SENT";
+    }
+  }
+}
+</script>
+<!-- ===== SPLASH + TITLE BAR (PREMIUM BLOCK) ===== -->
+
+<style>
+/* ===== SPLASH SCREEN ===== */
+#splashScreen{
+  position:fixed;
+  inset:0;
+  background:linear-gradient(135deg,#0b5ed7,#198754);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+
+.splash-content{
+  text-align:center;
+  color:#fff;
+  animation:splashAnim 2.2s ease forwards;
+}
+
+.splash-content img{
+  width:130px;
+  margin-bottom:14px;
+}
+
+.splash-content h1{
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:1px;
+}
+
+.splash-content p{
+  font-size:14px;
+  opacity:0.9;
+}
+
+@keyframes splashAnim{
+  from{opacity:0; transform:scale(0.6);}
+  to{opacity:1; transform:scale(1);}
+}
+
+/* ===== TITLE BAR ===== */
+.title-bar{
+  position:sticky;
+  top:0;
+  z-index:1000;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:12px 16px;
+  background:#ffffff;
+  border-bottom:4px solid #0b5ed7;
+  box-shadow:0 4px 14px rgba(0,0,0,0.15);
+}
+
+.title-bar img{
+  width:55px;
+  height:55px;
+  border-radius:10px;
+}
+
+.title-text h1{
+  margin:0;
+  font-size:18px;
+  font-weight:800;
+}
+
+.title-text .motto{
+  font-size:13px;
+  color:#198754;
+  font-weight:600;
+}
+
+.title-text .contact{
+  font-size:12px;
+  color:#555;
+}
+</style>
+
+<!-- SPLASH -->
+<div id="splashScreen">
+  <div class="splash-content">
+    <img src="https://i.ibb.co/nsXTJsbX/1000025628.jpg">
+    <h1>BETANIA CBC SYSTEM</h1>
+    <p>Knowledge With Conscience</p>
+  </div>
+</div>
+
+<!-- TITLE BAR -->
+<header class="title-bar">
+  <img src="https://i.ibb.co/4ZbM8KnW/1000020144.jpg">
+  <div class="title-text">
+    <h1>BETANIA SCHOOL</h1>
+    <div class="motto">KNOWLEDGE WITH CONSCIENCE</div>
+    <div class="contact">0793 845 653 · Emali / Kajiado</div>
+  </div>
+</header>
+
+<script>
+window.addEventListener("load",()=>{
+  setTimeout(()=>{
+    document.getElementById("splashScreen").style.display="none";
+  },2300);
+});
+</script>
+
+<!-- ===== END BLOCK ===== -->
+
+
+<nav>
+  <button onclick="showSection('home')">🏠 Home</button>
+  <button onclick="showSection('marks')">✏ Enter Marks</button>
+  <button onclick="showSection('results')">📊 Results</button>
+<button onclick="showSection('admin')">🔐 Admin</button>
+</nav>
+
+<!-- HOME -->
+<!-- HOME -->
+<section id="home" class="active">
+  <div class="home-welcome">
+    <h1>Welcome to Betania CBC Results System</h1>
+    <p>Choose an option above to continue</p>
+  </div>
+
+  <style>
+    #home{
+      min-height: 70vh;
+    }
+
+    .home-welcome{
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      text-align:center;
+      padding:20px;
+    }
+
+    .home-welcome h1{
+      font-size:28px;
+      font-weight:800;
+      color:#0d6efd;
+      margin-bottom:12px;
+    }
+
+    .home-welcome p{
+      font-size:16px;
+      color:#555;
+    }
+  </style>
+</section>
+<!-- MARKS -->
+<section id="marks">
+<div class="card">
+<h3>Enter Marks</h3>
+<label>Academic Year</label>
+<select id="yearSelect">
+  <option value="">-- Select Year --</option>
+  <option>2026</option>
+  <option>2027</option>
+  <option>2028</option>
+  <option>2029</option>
+  <option>2030</option>
+</select>
+
+<label>Term</label>
+<select id="termSelect">
+  <option value="">-- Select Term --</option>
+  <option>Term 1</option>
+  <option>Term 2</option>
+  <option>Term 3</option>
+</select>
+
+<label>Assessment</label>
+<select id="assessmentSelect">
+  <option value="">-- Select Assessment --</option>
+  <option value="Assessment 1">Assessment 1</option>
+  <option value="Assessment 2">Assessment 2</option>
+  <option value="Assessment 3">Assessment 3</option>
+  <option value="Assessment 4">Assessment 4</option>
+  <option value="Assessment 5">Assessment 5</option>
+  <option value="Assessment 6">Assessment 6</option>
+</select>
+
+<label>Class</label>
+<select id="classSelect" onchange="loadSubjects()">
+<option value="">-- Select Class --</option>
+<option>PP1</option><option>PP2</option>
+<option>Grade 1</option><option>Grade 2</option><option>Grade 3</option>
+<option>Grade 4</option><option>Grade 5</option><option>Grade 6</option>
+<option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
+</select>
+
+<label>Student</label>
+<select id="studentSelect"></select>
+
+<div id="subjectsArea"></div>
+
+<button onclick="saveMarks()">Save Marks</button>
+</div>
+</section>
+
+<!-- RESULTS -->
+<section id="results">
+<div class="card">
+  <div class="results-card">
+  <h2>Approved Results</h2>
+
+  <div class="form-grid">
+
+    <div class="form-group">
+      <label>Academic Year</label>
+      <select id="resultsYearSelect">
+        <option value="">-- Select Year --</option>
+        <option>2026</option>
+        <option>2027</option>
+        <option>2028</option>
+        <option>2029</option>
+        <option>2030</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Term</label>
+      <select id="resultsTermSelect">
+        <option value="">-- Select Term --</option>
+        <option>Term 1</option>
+        <option>Term 2</option>
+        <option>Term 3</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Filter by Class</label>
+      <select id="resultsClassSelect"
+        onchange="loadResultsStudents(this.value); loadResults();">
+        <option value="">-- Select Class --</option>
+        <option>PP1</option><option>PP2</option>
+        <option>Grade 1</option><option>Grade 2</option><option>Grade 3</option>
+        <option>Grade 4</option><option>Grade 5</option><option>Grade 6</option>
+        <option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Select Student</label>
+      <select id="resultsStudentSelect"
+        onchange="loadResults()">
+        <option value="">-- All Students --</option>
+      </select>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== CLASS PERFORMANCE (DEFAULT VIEW) ===== -->
+<div id="classSummary" class="card">
+  <h4>Class Performance Summary</h4>
+
+  <canvas id="classChart" height="200"></canvas>
+
+  <div id="classStats"></div>
+
+  <div id="overallStats" class="card overall-card">
+    <h4>📊 Overall Performance</h4>
+
+    <div id="bestSubject"></div>
+    <div id="bestStudent"></div>
+  </div>
+</div>
+
+<!-- ===== STUDENT PERFORMANCE (ON STUDENT SELECT) ===== -->
+<div class="card">
+  <h4 id="studentTitle" style="display:none;">Student Performance Summary</h4>
+  <canvas id="studentChart" height="200" style="display:none;"></canvas>
+  <div id="studentSummary"></div>
+  <button onclick="printResultSlip()" class="print-btn">
+  🖨️ Print Result Slip
+</button>
+  
+</div>
+<button id="teacherSmsBtn" onclick="sendResultSMS('teacher')" style="
+  background:#0d6efd;
+  color:white;
+  padding:10px;
+  width:100%;
+  border:none;
+  border-radius:5px;
+  margin-top:10px;
+  font-weight:bold;
+">
+📩 Send SMS (Teacher)
+</button>
+
+<button id="headSmsBtn" onclick="sendResultSMS('headteacher')" style="
+  background:#198754;
+  color:white;
+  padding:10px;
+  width:100%;
+  border:none;
+  border-radius:5px;
+  margin-top:8px;
+  font-weight:bold;
+">
+📩 Send SMS (Headteacher)
+</button>
+
+</section>
+
+<!-- ADMIN -->
+<section id="admin">
+<div class="card" id="adminLogin">
+<h3>Admin Login</h3>
+<input type="password" id="adminPin" placeholder="Enter PIN">
+<button onclick="checkPin()">Login</button>
+<p id="pinError" style="color:red;"></p>
+</div>
+
+<div class="card" id="adminPanel" style="display:none;">
+<h3>Admin Panel</h3>
+
+<h4>Student Register</h4>
+<input type="text" id="admissionNo" placeholder="Admission Number">
+
+<input type="text" id="newStudent" placeholder="Student Name">
+
+<input type="text" id="parentName" placeholder="Parent / Guardian Name">
+
+<input type="tel" id="parentPhone" placeholder="Parent Phone Number">
+
+<select id="newClass">
+  <option value="">-- Class --</option>
+  <option>PP1</option>
+  <option>PP2</option>
+  <option>Grade 1</option>
+  <option>Grade 2</option>
+  <option>Grade 3</option>
+  <option>Grade 4</option>
+  <option>Grade 5</option>
+  <option>Grade 6</option>
+  <option>Grade 7</option>
+  <option>Grade 8</option>
+  <option>Grade 9</option>
+</select>
+
+<button type="button" onclick="addStudent()">Save Student</button>
+
+<h4>Registered Students</h4>
+<div id="studentList"></div>
+
+</div> <!-- adminPanel -->
+</section> <!-- admin -->
+
+</body>
+
+</html>
+    

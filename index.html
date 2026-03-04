@@ -53,15 +53,15 @@ nav button{
   padding:10px 16px;
   border:none;
   border-radius:8px;
-  background:#e9ecef;
+  background:#198754;
+  color:white;
   font-weight:600;
   cursor:pointer;
   transition:0.2s;
 }
 
 nav button:hover{
-  background:#198754;
-  color:white;
+  background:#146c43;
 }
 
 /* SECTIONS */
@@ -366,38 +366,39 @@ async function listStudents(){
   for(const cls in grouped){
     const groupId = cls.replace(/\s+/g,"_");
 
-    list.innerHTML += `
- <div class="class-header" onclick="toggleClass('${groupId}', this)">
-  <h4>${cls}</h4>
-  <span class="arrow">▶</span>
-</div>
+   list.innerHTML += `
+  <div class="class-group">
+    <div onclick="toggleClass('${groupId}')" 
+         style="cursor:pointer;font-weight:bold;margin-top:10px;">
+      ▶ ${cls}
+    </div>
 
-        <div id="${groupId}" class="students-group">
-          ${grouped[cls].map(s=>`
-            <div class="card">
-              <strong>${s.name}</strong><br>
-              Admission No: ${s.admissionNo}<br>
-              Parent: ${s.parent}<br>
-              Phone: ${s.phone}<br><br>
+    <div id="${groupId}" style="display:none;">
+      ${grouped[cls].map(s=>`
+        <div class="card">
+          <strong>${s.name}</strong><br>
+          Admission No: ${s.admissionNo}<br>
+          Parent: ${s.parent}<br>
+          Phone: ${s.phone}<br><br>
 
-              <button onclick="editStudent(
-                '${s.id}',
-                '${s.admissionNo}',
-                '${s.name}',
-                '${s.parent}',
-                '${s.phone}',
-                '${s.class}'
-              )">Edit</button>
+          <button onclick="editStudent(
+            '${s.id}',
+            '${s.admissionNo}',
+            '${s.name}',
+            '${s.parent}',
+            '${s.phone}',
+            '${s.class}'
+          )">Edit</button>
 
-              <button onclick="deleteStudent('${s.id}')">
-                Delete
-              </button>
-            </div>
-          `).join("")}
+          <button onclick="deleteStudent('${s.id}')">
+            Delete
+          </button>
         </div>
-      </div>
-    `;
-  }
+      `).join("")}
+    </div>
+  </div>
+`;
+}
 }
 
 async function saveMarks(){
@@ -728,7 +729,6 @@ const marks = [];
     </p>
   `;
 });
-
   const avg = Math.round(total / r.subjects.length);
   // SAVE CURRENT STUDENT DATA FOR SMS
 window.currentStudentAverage = avg;
@@ -769,7 +769,7 @@ window.currentResultApproved = true; // because we only load APPROVED results he
     }
   });
 }
-  function toggleClass(id){
+function toggleClass(id){
   const el = document.getElementById(id);
   el.style.display = el.style.display === "none" ? "block" : "none";
 }
@@ -958,6 +958,36 @@ function updateSmsButtons(){
       headBtn.innerText = "✔ SMS SENT";
     }
   }
+}
+async function autoPromoteStudents(){
+  if(!confirm("Promote ALL students to next class?")) return;
+
+  const snap = await getDocs(collection(db,"students"));
+
+  for(const d of snap.docs){
+
+    const student = d.data();
+    let newClass = student.class;
+
+    if(student.class === "PP1") newClass = "PP2";
+    else if(student.class === "PP2") newClass = "Grade 1";
+    else if(student.class === "Grade 1") newClass = "Grade 2";
+    else if(student.class === "Grade 2") newClass = "Grade 3";
+    else if(student.class === "Grade 3") newClass = "Grade 4";
+    else if(student.class === "Grade 4") newClass = "Grade 5";
+    else if(student.class === "Grade 5") newClass = "Grade 6";
+    else if(student.class === "Grade 6") newClass = "Grade 7";
+    else if(student.class === "Grade 7") newClass = "Grade 8";
+    else if(student.class === "Grade 8") newClass = "Grade 9";
+    else continue;
+
+    await updateDoc(doc(db,"students",d.id),{
+      class: newClass
+    });
+  }
+
+  alert("All students promoted successfully!");
+  listStudents();
 }
 </script>
 <!-- ===== SPLASH + TITLE BAR (PREMIUM BLOCK) ===== -->
@@ -1306,7 +1336,11 @@ window.addEventListener("load",()=>{
 </select>
 
 <button type="button" onclick="addStudent()">Save Student</button>
-
+<button type="button" 
+onclick="autoPromoteStudents()" 
+style="background:#dc3545;color:white;margin-top:10px;">
+⬆ Auto Promote All Students
+</button>
 <h4>Registered Students</h4>
 <div id="studentList"></div>
 
@@ -1316,4 +1350,4 @@ window.addEventListener("load",()=>{
 </body>
 
 </html>
-    
+  

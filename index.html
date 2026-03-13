@@ -141,6 +141,81 @@ button:hover{
   background:#146c43;
 }
 
+/* ===== SPLASH SCREEN ===== */
+#splashScreen{
+  position:fixed;
+  inset:0;
+  background:linear-gradient(135deg,#0b5ed7,#198754);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+}
+
+.splash-content{
+  text-align:center;
+  color:#fff;
+  animation:splashAnim 2.2s ease forwards;
+}
+
+.splash-content img{
+  width:130px;
+  margin-bottom:14px;
+}
+
+.splash-content h1{
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:1px;
+}
+
+.splash-content p{
+  font-size:14px;
+  opacity:0.9;
+}
+
+@keyframes splashAnim{
+  from{opacity:0; transform:scale(0.6);}
+  to{opacity:1; transform:scale(1);}
+}
+
+/* ===== TITLE BAR ===== */
+.title-bar{
+  position:sticky;
+  top:0;
+  z-index:1000;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:12px 16px;
+  background:#ffffff;
+  border-bottom:4px solid #0b5ed7;
+  box-shadow:0 4px 14px rgba(0,0,0,0.15);
+}
+
+.title-bar img{
+  width:55px;
+  height:55px;
+  border-radius:10px;
+}
+
+.title-text h1{
+  margin:0;
+  font-size:18px;
+  font-weight:800;
+}
+
+.title-text .motto{
+  font-size:13px;
+  color:#198754;
+  font-weight:600;
+}
+
+.title-text .contact{
+  font-size:12px;
+  color:#555;
+}
+
 </style>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
@@ -148,16 +223,17 @@ import {
   getFirestore, collection, addDoc, getDocs, query, where,
   doc, updateDoc, deleteDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
-
+let studentChartInstance = null;
+let classChartInstance = null;
 const firebaseConfig = {
   apiKey: "AIzaSyAZwo5QfOCx-1eZmjzxjtgmjKA0jjL1uQs",
   authDomain: "betania-school.firebaseapp.com",
   projectId: "betania-school",
 };
-
+let isLoadingResults = false;
 const app = initializeApp(firebaseConfig);
 window.db = getFirestore(app);
-const ADMIN_PIN="1234";
+const ADMIN_PIN="7625";
 
 
 const CBC={
@@ -199,29 +275,8 @@ function getCbcGrade(mark){
 
   return { level:"BE2", performance:"Below Expectation", points:0.5 };
 }
-function showSection(id){
-  document.querySelectorAll("section").forEach(s =>
-    s.classList.remove("active")
-  );
 
-  document.getElementById(id).classList.add("active");
 
-  if(id === "marks"){
-    const cls = document.getElementById("classSelect").value;
-    const assessment = document.getElementById("assessmentSelect").value;
-    loadStudents(cls);
-  }
-
-  if(id === "results"){
-    loadResults();
-  }
-
-  if(id === "admin"){
-    listStudents();
-  }
-}
-
-window.showSection = showSection;
 function group(cls){
 if(cls==="PP1"||cls==="PP2") return "PP";
 if(cls.includes("Grade 1")||cls.includes("Grade 2")||cls.includes("Grade 3")) return "G1_3";
@@ -229,16 +284,18 @@ if(cls.includes("Grade 4")||cls.includes("Grade 5")||cls.includes("Grade 6")) re
 return "G7_9";
 }
 
-function loadSubjects(){
-  const cls = classSelect.value;
+window.loadSubjects = function(){
+
+  const cls = document.getElementById("classSelect").value;
   const area = document.getElementById("subjectsArea");
+
   area.innerHTML = "";
 
   if(!cls) return;
 
   const subjects = CBC[group(cls)];
 
-  subjects.forEach(sub => {
+  subjects.forEach(sub=>{
     area.innerHTML += `
       <label>${sub}</label>
       <input type="number" min="0" max="100" data-sub="${sub}">
@@ -246,186 +303,544 @@ function loadSubjects(){
   });
 
   loadStudents(cls);
+
 }
+
+let loadingStudents = false;
 // ===== LOAD STUDENTS =====
 async function loadStudents(cls){
 
   const studentSelect = document.getElementById("studentSelect");
-  studentSelect.innerHTML = `<option value="">-- Select Student --</option>`;
+
+  studentSelect.innerHTML = '<option value="">-- Select Student --</option>';
 
   if(!cls) return;
 
-  const q = query(
-    collection(db,"students"),
-    where("class","==",cls)
-  );
+  try{
 
-  const snap = await getDocs(q);
+    const q = query(
+      collection(db,"students"),
+      where("class","==",cls)
+    );
 
-  if(snap.empty){
-    studentSelect.innerHTML += `<option disabled>No students found</option>`;
-    return;
+    const snap = await getDocs(q);
+
+    if(snap.empty){
+      console.log("No students found");
+      return;
+    }
+
+    snap.forEach(docSnap=>{
+
+      const s = docSnap.data();
+
+      const option = document.createElement("option");
+
+      option.value = s.admissionNo;   // unique id
+      option.textContent = `${s.admissionNo} - ${s.name}`;
+
+      studentSelect.appendChild(option);
+
+    });
+
+  }catch(err){
+    console.error("Load students error:", err);
   }
 
-  snap.forEach(docSnap=>{
-    const s = docSnap.data();
-    studentSelect.innerHTML += `
-      <option value="${s.name}">${s.name}</option>
-    `;
-  });
 }
+
 async function loadResults(){
 
-  // RESET VIEW  CLASS PERFORMANCE
-  document.getElementById("classChart").style.display = "block";
-  document.getElementById("classSummary").style.display = "block";
+if(isLoadingResults) return;
+isLoadingResults = true;
 
-  document.getElementById("studentChart").style.display = "none";
-  document.getElementById("studentTitle").style.display = "none";
-  document.getElementById("studentSummary").innerHTML = "";
+const year = document.getElementById("resultsYearSelect").value;
+const term = document.getElementById("resultsTermSelect").value;
+const cls = document.getElementById("resultsClassSelect").value;
+const student = document.getElementById("resultsStudentSelect").value;
 
-  
-  const cls = resultsClassSelect.value;
-  const student = resultsStudentSelect.value;
-  
-
-  if(!cls){
-    
-    return;
-  }
-
-  // always show class summary
-  drawClassSummary(cls);
-  
-
-  // if a student is selected  show student performance
-  if(student){
-    drawStudentSummary(cls, student);
-  }
+if(!year || !term || !cls){
+isLoadingResults = false;
+return;
 }
-async function addStudent() {
-  const adm = document.getElementById("admissionNo").value.trim();
-  const name = document.getElementById("newStudent").value.trim();
-  const parent = document.getElementById("parentName").value.trim();
-  const phone = document.getElementById("parentPhone").value.trim();
-  const cls = document.getElementById("newClass").value;
 
-  if (!adm || !name || !parent || !phone || !cls) {
-    alert("Fill all student details");
-    return;
-  }
+try{
 
-  if(editingStudentId){
-  await updateDoc(doc(db,"students",editingStudentId),{
-    admissionNo: adm,
-    name: name,
-    parent: parent,
-    phone: phone,
-    class: cls
-  });
-  editingStudentId = null;
+/* show class summary if no student selected */
+if(!student){
+
+await drawClassSummary(cls);
+await loadClassSizes();
+
+}
+
+/* show class summary if no student selected */
+if(!student){
+
+try{
+await drawClassSummary(cls);
+await loadClassSizes();
+}catch(err){
+console.error("Class summary error:", err);
+}
+
+}
+
+/* show student summary */
+else{
+
+window.currentStudentName = document.getElementById("studentSelect").selectedOptions[0].text;
+window.currentClass = cls;
+window.currentParentPhone = await getParentPhone(student, cls);
+
+await drawStudentSummary(cls, student);
+await calculatePosition(cls, term, year, student);
+
+}
+
+}catch(err){
+console.error("Results load error:", err);
+}
+
+isLoadingResults = false;
+
+}
+
+async function sendResultSMS(type){
+
+const studentAdm = resultsStudentSelect.value;
+const cls = resultsClassSelect.value;
+
+const phone = await getParentPhone(studentAdm, cls);
+
+if(!phone){
+alert("Parent phone number not found");
+return;
+}
+
+const student = window.currentStudentName;
+const assessment = window.currentAssessment || "-";
+const avg = window.currentStudentAverage;
+const position = window.currentStudentPosition;
+const size = window.currentClassSize;
+const performance = window.currentStudentRemark;
+
+if(!phone){
+alert("Parent phone number not found");
+return;
+}
+
+let comment = "";
+
+if(type === "teacher"){
+comment = document.getElementById("teacherComment").value || window.currentTeacherComment;
+}
+
+if(type === "headteacher"){
+comment = document.getElementById("headComment").value || window.currentHeadComment;
+}
+
+// SUBJECT SHORT NAMES
+const shortNames = {
+"Mathematics":"Math",
+"English":"Eng",
+"Kiswahili":"Kis",
+"Integrated Science":"Sci",
+"Science":"Sci",
+"CRE":"CRE",
+"Environmental":"Env",
+"Environment":"Env",
+"Social Studies":"SST",
+"Agriculture":"Agr"
+};
+
+const subjects = window.currentSubjects || [];
+
+let subjectText = "";
+let totalPoints = 0;
+
+// sort subjects by marks (highest first)
+// sort subjects by score
+subjects.sort((a,b)=> (b.score || 0) - (a.score || 0));
+
+// top 3 subjects
+const top3 = subjects.slice(0,3);
+
+let top3Text = "";
+
+top3Text = top3.map(s=>{
+  const short = shortNames[s.name] || s.name;
+  return `${short} ${s.score}`;
+}).join(" | ");
+
+subjects.forEach(s=>{
+
+  const short = shortNames[s.name] || s.name;
+
+  const mark = s.score || 0;
+
+  // calculate CBC points
+  let pts = 1;
+
+  if(mark >= 75) pts = 4;
+  else if(mark >= 50) pts = 3;
+  else if(mark >= 25) pts = 2;
+
+  subjectText += `${short}:${mark}(${pts}) `;
+
+  totalPoints += pts;
+
+});
+
+const message =
+`BETANIA SCHOOL
+Knowledge With Conscience
+
+ASSESSMENT ${assessment}
+${resultsTermSelect.value} ${resultsYearSelect.value}
+
+${resultsStudentSelect.options[resultsStudentSelect.selectedIndex].text}
+ADM:${resultsStudentSelect.value}
+CLASS:${resultsClassSelect.value}
+
+AVG:${avg}%  POS:${position || "-"} / ${size || "-"}
+${performance}
+
+TOP 3: ${top3Text}
+
+SUBJECTS
+${subjectText}
+
+CBC POINTS:${totalPoints}`;
+window.location.href =
+"sms:" + phone + "?body=" + encodeURIComponent(message);
+
+}
+async function calculatePosition(cls, term, year, student){
+
+const q = query(
+collection(db,"results"),
+where("class","==",cls),
+where("term","==",term),
+where("year","==",year),
+where("status","==","APPROVED")
+);
+
+const snap = await getDocs(q);
+
+let students = [];
+
+snap.forEach(doc=>{
+const data = doc.data();
+
+let total = 0;
+let count = 0;
+
+(data.subjects || []).forEach(s=>{
+total += Number(s.marks || 0);
+count++;
+});
+
+const avg = count ? total / count : 0;
+
+students.push({
+student: data.student,
+average: avg
+});
+
+});
+
+students.sort((a,b)=> (b.average || 0) - (a.average || 0));
+
+const size = students.length;
+
+/* GET THE REAL NAME */
+window.currentStudentName = students.find(s => s.student === student)?.name || student;
+
+let position = students.findIndex(s=> s.admissionNo === admissionNo) + 1;
+
+window.currentStudentPosition = position;
+window.currentClassSize = size;
+
+}
+async function addStudent(){
+
+const name = document.getElementById("newStudent").value.trim();
+const admission = document.getElementById("admissionNo").value.trim().toUpperCase();
+const parent = document.getElementById("parentName").value.trim();
+const phone = document.getElementById("parentPhone").value.trim();
+const cls = document.getElementById("newClass").value;
+
+if(!name || !cls){
+alert("Enter student name and class");
+return;
+}
+
+const studentData = {
+name:name,
+admissionNo:admission,
+parentName:parent,
+phone:phone,
+class:cls
+};
+
+try{
+
+//  CHECK FOR DUPLICATE ADMISSION NUMBER
+if(!window.editingStudentId){
+
+const q = query(
+collection(db,"students"),
+where("admissionNo","==",admission)
+);
+
+const snap = await getDocs(q);
+
+if(!snap.empty){
+alert("A student with this admission number already exists.");
+return;
+}
+
+}
+
+// UPDATE STUDENT
+if(window.editingStudentId){
+
+await updateDoc(
+doc(db,"students",window.editingStudentId),
+studentData
+);
+
+window.editingStudentId = null;
+
+alert("Student updated successfully");
+
 }else{
-  await addDoc(collection(db,"students"), {
-    admissionNo: adm,
-    name: name,
-    parent: parent,
-    phone: phone,
-    class: cls,
-    createdAt: serverTimestamp()
-  });
+
+// ADD NEW STUDENT
+await addDoc(
+collection(db,"students"),
+studentData
+);
+
+alert("Student added successfully");
+
 }
 
-  document.getElementById("admissionNo").value = "";
-  document.getElementById("newStudent").value = "";
-  document.getElementById("parentName").value = "";
-  document.getElementById("parentPhone").value = "";
-  document.getElementById("newClass").value = "";
+// clear form
+document.getElementById("newStudent").value="";
+document.getElementById("admissionNo").value="";
+document.getElementById("parentName").value="";
+document.getElementById("parentPhone").value="";
+document.getElementById("newClass").value="";
 
-  listStudents();
+listStudents();
+loadClassSizes();
+
+}catch(err){
+console.error(err);
+alert("Error saving student");
+}
+
 }
 
 async function listStudents(){
-  const list = document.getElementById("studentList");
-  list.innerHTML = "";
 
-  const snap = await getDocs(collection(db,"students"));
+const snap = await getDocs(collection(db,"students"));
 
-  if(snap.empty){
-    list.innerHTML = "<p>No students registered.</p>";
-    return;
+const studentsByClass = {};
+
+snap.forEach(d=>{
+  const s = d.data();
+  const cls = s.class;
+
+  if(!studentsByClass[cls]){
+    studentsByClass[cls] = [];
   }
 
-  const grouped = {};
-
-  snap.forEach(d=>{
-    const s = d.data();
-    if(!grouped[s.class]) grouped[s.class] = [];
-    grouped[s.class].push({ id:d.id, ...s });
+  studentsByClass[cls].push({
+    id: d.id,
+    name: s.name,
+    admission: s.admissionNo || "",
+    parent: s.parentName || "",
+    phone: s.phone || "",
+    class: s.class || ""
   });
 
-  for(const cls in grouped){
-    const groupId = cls.replace(/\s+/g,"_");
+});
 
-   list.innerHTML += `
-  <div class="class-group">
-    <div onclick="toggleClass('${groupId}')" 
-         style="cursor:pointer;font-weight:bold;margin-top:10px;">
-      ▶ ${cls}
-    </div>
+const classOrder = [
+"PP1",
+"PP2",
+"Grade 1",
+"Grade 2",
+"Grade 3",
+"Grade 4",
+"Grade 5",
+"Grade 6",
+"Grade 7",
+"Grade 8",
+"Grade 9"
+];
 
-    <div id="${groupId}" style="display:none;">
-      ${grouped[cls].map(s=>`
-        <div class="card">
-          <strong>${s.name}</strong><br>
-          Admission No: ${s.admissionNo}<br>
-          Parent: ${s.parent}<br>
-          Phone: ${s.phone}<br><br>
+let html = "";
 
-          <button onclick="editStudent(
-            '${s.id}',
-            '${s.admissionNo}',
-            '${s.name}',
-            '${s.parent}',
-            '${s.phone}',
-            '${s.class}'
-          )">Edit</button>
+classOrder.forEach(cls=>{
 
-          <button onclick="deleteStudent('${s.id}')">
-            Delete
-          </button>
-        </div>
-      `).join("")}
-    </div>
-  </div>
+if(!studentsByClass[cls]) return;
+
+const sectionId = "class_"+cls.replace(/\s/g,"");
+
+html += `
+<div style="margin-bottom:12px;">
+<div onclick="toggleClass('${sectionId}')" style="font-weight:bold;cursor:pointer;">
+▶ ${cls}
+</div>
+
+<div id="${sectionId}" style="display:none;margin-left:15px;">
 `;
-}
+
+studentsByClass[cls].forEach(s=>{
+
+html += `
+<div style="
+border:1px solid #ddd;
+padding:8px;
+margin:6px 0;
+border-radius:6px;
+background:#fafafa;
+">
+
+<strong>${s.admission} - ${s.name}</strong><br>
+
+Parent: ${s.parent}<br>
+Phone: ${s.phone}<br>
+Class: ${s.class}
+
+<div style="margin-top:6px;">
+<button onclick="editStudent('${s.id}','${s.name}','${s.admission}','${s.parent}','${s.phone}','${s.class}')">Edit</button>
+<button onclick="deleteStudent('${s.id}')">Delete</button>
+</div>
+
+</div>
+`;
+
+});
+
+html += `
+</div>
+</div>
+`;
+
+});
+
+document.getElementById("studentList").innerHTML = html;
+
 }
 
 async function saveMarks(){
-  const year=yearSelect.value;
-  const term=termSelect.value;
-  const student=studentSelect.value;
-  const cls=classSelect.value;
-const assessment = assessmentSelect.value;
-  if(!year || !term || !cls || !student || !assessment){
-    alert("Select all fields including assessment");
-    return;
-}
 
-  const subjects=[];
-document.querySelectorAll("#subjectsArea input").forEach(i=>{
-  const gradeInfo = getCbcGrade(i.value);
+const year = yearSelect.value;
+const term = termSelect.value;
+const student = studentSelect.value;
+const cls = classSelect.value;
+const assessment = assessmentSelect.value;
+
+// ===== COLLECT SUBJECT MARKS =====
+const subjects = [];
+
+document.querySelectorAll("#subjectsArea input").forEach(i => {
+
+  if(i.value === "") return;
+
+  const mark = Number(i.value);
+
+  if(mark > 100){
+    alert("Marks cannot be above 100");
+    throw new Error("Invalid mark");
+  }
+
+  const gradeInfo = getCbcGrade(mark);
 
   subjects.push({
     subject: i.dataset.sub,
-    marks: Number(i.value),
+    marks: mark,
     level: gradeInfo.level,
     performance: gradeInfo.performance,
     points: gradeInfo.points
   });
+
 });
 
-  await addDoc(collection(db,"results"),{
+// ===== PREVENT EMPTY VALUES =====
+if(!cls){
+  alert("Please select a class");
+  return;
+}
+
+if(!student){
+  alert("Please select a student");
+  return;
+}
+
+if(!assessment){
+  alert("Please select an assessment");
+  return;
+}
+
+if(!year || !term){
+  alert("Please select year and term");
+  return;
+}
+
+
+// ===== PREVENT DUPLICATE ASSESSMENT =====
+const duplicateQuery = query(
+  collection(db,"results"),
+  where("student","==",student),
+  where("class","==",cls),
+  where("year","==",year),
+  where("term","==",term),
+  where("assessment","==",assessment),
+  where("status","==","APPROVED")
+);
+
+const duplicateSnap = await getDocs(duplicateQuery);
+
+if(!duplicateSnap.empty){
+  alert("This assessment has already been entered for this student.");
+  return;
+}
+
+
+// ===== LOCK RESULT IF SMS WAS ALREADY SENT =====
+const approvedQuery = query(
+  collection(db,"results"),
+  where("student","==",student),
+  where("class","==",cls),
+  where("year","==",year),
+  where("term","==",term),
+  where("status","==","APPROVED")
+);
+
+const approvedSnap = await getDocs(approvedQuery);
+
+for(const d of approvedSnap.docs){
+  const data = d.data();
+
+  if(data.smsSent === true){
+    alert("Results already sent to parent. Editing locked.");
+    return;
+  }
+}
+
+if(subjects.length === 0){
+  alert("Please enter marks for at least one subject.");
+  return;
+}
+
+// ===== SAVE TO FIRESTORE =====
+await addDoc(collection(db,"results"),{
   student,
   class: cls,
   year,
@@ -435,27 +850,22 @@ document.querySelectorAll("#subjectsArea input").forEach(i=>{
   status: "APPROVED",
   teacherSmsAllowed: true,
   smsSent: false,
+  termCompleted: assessment === "Assessment 6",
   createdAt: serverTimestamp()
 });
+
 alert("Results saved successfully");
 
-// Clear form
-document.getElementById("studentSelect").value = "";
-document.getElementById("subjectsArea").innerHTML = "";
+// ===== RESET ENTER MARKS FORM =====
+document.getElementById("yearSelect").selectedIndex = 0;
+document.getElementById("termSelect").selectedIndex = 0;
+document.getElementById("assessmentSelect").selectedIndex = 0;
+document.getElementById("classSelect").selectedIndex = 0;
+document.getElementById("studentSelect").selectedIndex = 0;
 
-// Open Results section automatically
-showSection("results");
+  document.getElementById("subjectsArea").innerHTML = "";
 
-// Select same class in results
-document.getElementById("resultsClassSelect").value = cls;
-
-// Load students and results
-await loadResultsStudents(cls);
-await loadResults();
 }
-
-
-
 function checkPin(){
   if(adminPin.value === ADMIN_PIN){
     adminLogin.style.display = "none";
@@ -470,37 +880,101 @@ async function deleteStudent(id){
   if(!confirm("Delete this student?")) return;
   await deleteDoc(doc(db,"students",id));
   listStudents();
+  loadClassSizes();
 }
 let editingStudentId = null;
 
-function editStudent(id, adm, name, parent, phone, cls){
-  editingStudentId = id;
+function editStudent(id,name,admission,parent,phone,cls){
 
-  document.getElementById("admissionNo").value = adm;
-  document.getElementById("newStudent").value = name;
-  document.getElementById("parentName").value = parent;
-  document.getElementById("parentPhone").value = phone;
-  document.getElementById("newClass").value = cls;
+document.getElementById("newStudent").value = name || "";
+document.getElementById("admissionNo").value = admission || "";
+document.getElementById("parentName").value = parent || "";
+document.getElementById("parentPhone").value = phone || "";
+document.getElementById("newClass").value = cls || "";
 
-  alert("Edit the fields then click SAVE STUDENT");
+window.editingStudentId = id;
+
 }
+async function autoPromoteStudents(){
 
+  const confirmPromote = confirm("Promote all students to next class?");
+  if(!confirmPromote) return;
+
+  const snap = await getDocs(collection(db,"students"));
+
+  for(const d of snap.docs){
+
+    const data = d.data();
+    let nextClass = data.class;
+
+    if(data.class === "PP1") nextClass = "PP2";
+    else if(data.class === "PP2") nextClass = "Grade 1";
+    else if(data.class === "Grade 1") nextClass = "Grade 2";
+    else if(data.class === "Grade 2") nextClass = "Grade 3";
+    else if(data.class === "Grade 3") nextClass = "Grade 4";
+    else if(data.class === "Grade 4") nextClass = "Grade 5";
+    else if(data.class === "Grade 5") nextClass = "Grade 6";
+    else if(data.class === "Grade 6") nextClass = "Grade 7";
+    else if(data.class === "Grade 7") nextClass = "Grade 8";
+    else if(data.class === "Grade 8") nextClass = "Grade 9";
+
+    await updateDoc(doc(db,"students",d.id),{
+      class: nextClass
+    });
+
+  }
+
+  alert("Students promoted successfully");
+  listStudents();
+}
 async function loadResultsStudents(cls){
-  const sel = document.getElementById("resultsStudentSelect");
-  sel.innerHTML = `<option value="">-- All Students --</option>`;
+
+  const select = document.getElementById("resultsStudentSelect");
+
+  select.innerHTML = `<option value="">-- Select Student --</option>`;
+
   if(!cls) return;
 
-  const q = query(collection(db,"students"), where("class","==",cls));
+  try{
+
+    const q = query(
+      collection(db,"students"),
+      where("class","==",cls)
+    );
+
+    const snap = await getDocs(q);
+
+    if(snap.empty) return;
+
+    snap.forEach(doc=>{
+      const s = doc.data();
+
+      const option = document.createElement("option");
+      option.value = s.admissionNo;
+option.textContent = s.admissionNo + " - " + s.name;
+
+      select.appendChild(option);
+    });
+
+  }catch(err){
+    console.error("Student load error:", err);
+  }
+
+}
+async function getStudentName(adm){
+
+  const q = query(
+    collection(db,"students"),
+    where("admissionNo","==",adm)
+  );
+
   const snap = await getDocs(q);
 
-  snap.forEach(d=>{
-    sel.innerHTML += `<option>${d.data().name}</option>`;
-  });
+  if(snap.empty) return adm;
+
+  return snap.docs[0].data().name;
+
 }
-
-// ===== CLASS SUMMARY & CHART =====
-let classChartInstance = null;
-
 async function drawClassSummary(cls){
 
   try {
@@ -614,18 +1088,46 @@ async function drawClassSummary(cls){
       </div>
     `;
 
-    bestStudentEl.innerHTML = `
-      <div class="summary-box">
-        👩‍🎓 <strong>Best Student:</strong> ${bestStu} (${bestStuAvg}%)
-      </div>
-    `;
+    const bestStudentName = await getStudentName(bestStu);
 
-    if(classChartInstance){
-      classChartInstance.data.labels = labels;
-      classChartInstance.data.datasets[0].data = averages;
-      classChartInstance.update();
-      return;
-    }
+bestStudentEl.innerHTML = `
+<div class="summary-box">
+👩‍🎓 <strong>Best Student:</strong> ${bestStudentName} (${bestStuAvg}%)
+</div>
+`;
+   
+// ===== TOP 3 STUDENTS =====
+
+const ranking = [];
+
+for(const stu in studentTotals){
+  const avg = Math.round(studentTotals[stu] / studentCounts[stu]);
+  ranking.push({ name: stu, avg });
+}
+
+ranking.sort((a,b)=> (b.avg || 0) - (a.avg || 0));
+const topName = ranking[0] ? await getStudentName(ranking[0].name) : "-";
+const secondName = ranking[1] ? await getStudentName(ranking[1].name) : "-";
+const thirdName = ranking[2] ? await getStudentName(ranking[2].name) : "-";
+const topDiv = document.getElementById("topStudents");
+
+topDiv.innerHTML = `
+  <div class="summary-box">
+    🏆 <strong>Top Student:</strong> ${topName}(${ranking[0]?.avg || 0}%)
+  </div>
+
+  <div class="summary-box">
+    🥈 <strong>Second:</strong> ${secondName}(${ranking[1]?.avg || 0}%)
+  </div>
+
+  <div class="summary-box">
+    🥉 <strong>Third:</strong> ${thirdName} (${ranking[2]?.avg || 0}%)
+  </div>
+`;
+if(classChartInstance){
+classChartInstance.destroy();
+classChartInstance = null;
+}
 
     classChartInstance = new Chart(
       document.getElementById("classChart").getContext("2d"),
@@ -634,9 +1136,21 @@ async function drawClassSummary(cls){
         data: {
           labels,
           datasets: [{
-            label: "Class Subject Averages (%)",
-            data: averages
-          }]
+label: "Class Subject Averages (%)",
+data: averages,
+backgroundColor:[
+"#0d6efd",
+"#198754",
+"#ffc107",
+"#dc3545",
+"#6f42c1",
+"#20c997",
+"#fd7e14",
+"#6610f2",
+"#fd7e14"
+],
+borderWidth:1
+}]
         },
         options: {
           responsive: true,
@@ -655,123 +1169,304 @@ async function drawClassSummary(cls){
 
 // ===== GRADE CALCULATION =====
 
-let studentChartInstance = null;
+async function drawStudentSummary(cls, admissionNo){
 
-async function drawStudentSummary(cls, studentName) {
-  const studentTitle = document.getElementById("studentTitle");
-  const studentSummary = document.getElementById("studentSummary");
-  const studentChart = document.getElementById("studentChart");
+window.currentAssessment =
+document.getElementById("resultsAssessmentSelect").value || "Overall";
+window.currentStudentName = admissionNo;
+window.currentClass = cls;
 
-  // hide class performance
-  document.getElementById("classChart").style.display = "none";
-  document.getElementById("classSummary").style.display = "none";
+const studentTitle = document.getElementById("studentTitle");
+const studentSummary = document.getElementById("studentSummary");
+const studentChart = document.getElementById("studentChart");
 
-  studentTitle.style.display = "block";
-  studentChart.style.display = "block";
-  studentSummary.innerHTML = "";
+document.getElementById("classChart").style.display="none";
+document.getElementById("classSummary").style.display="none";
 
-  const year = document.getElementById("resultsYearSelect").value;
+studentTitle.style.display = "block";
+document.getElementById("studentChartContainer").style.display = "block";
+studentChart.height = 200;
+
+studentSummary.innerHTML = "";
+
+const year = document.getElementById("resultsYearSelect").value;
 const term = document.getElementById("resultsTermSelect").value;
+const assessment = resultsAssessmentSelect.value;
+
+const assessmentDiv = document.getElementById("assessmentLabel");
+
+if(assessment){
+  assessmentDiv.style.display = "block";
+  assessmentDiv.innerHTML = "Assessment: " + assessment;
+}else{
+  assessmentDiv.style.display = "none";
+}
 
 const q = query(
-  collection(db, "results"),
-  where("class", "==", cls),
-  where("student", "==", studentName),
-  where("year","==",year),
-  where("term","==",term),
-  where("status", "==", "APPROVED")
+collection(db,"results"),
+where("class","==",cls),
+where("student","==",admissionNo),
+where("year","==",year),
+where("term","==",term),
+where("status","==","APPROVED")
 );
 
-  const snap = await getDocs(q);
-  if (snap.empty) {
-    studentSummary.innerHTML = "<p>No approved results.</p>";
-    return;
-  }
+const snap = await getDocs(q);
 
-  const r = snap.docs[0].data();
-  // SAVE SMS PERMISSION STATE
-window.currentTeacherSmsAllowed = r.teacherSmsAllowed === true;
-window.currentSmsSent = r.smsSent === true;
-updateSmsButtons();
+if(snap.empty){
+studentSummary.innerHTML="<p>No results found.</p>";
+return;
+}
 
-// fetch admission + parent phone
-const admissionNo = await getAdmissionNumber(studentName, cls);
-const parentPhone = await getParentPhone(studentName, cls);
+const subjectTotals = {};
+const subjectCounts = {};
 
-window.currentAdmissionNo = admissionNo;
-window.currentParentPhone = parentPhone;
+snap.forEach(d=>{
+const r = d.data();
 
-  let total = 0;
+window.currentAssessment = r.assessment || "-";
+window.currentSubjects = r.subjects || [];
+
+r.subjects.forEach(s=>{
+
+if(!subjectTotals[s.subject]){
+subjectTotals[s.subject] = 0;
+subjectCounts[s.subject] = 0;
+}
+
+subjectTotals[s.subject] += Number(s.marks || 0);
+subjectCounts[s.subject]++;
+
+});
+});
+
+let totalMarks = 0;
+let subjectCount = 0;
 let totalPoints = 0;
+
 const labels = [];
 const marks = [];
-  const colors = [
-    "#0d6efd", "#198754", "#ffc107",
-    "#dc3545", "#6f42c1", "#20c997",
-    "#fd7e14", "#0dcaf0"
-  ];
+window.currentSubjects = [];
 
-  r.subjects.forEach(s => {
-  total += s.marks;
-  labels.push(s.subject);
-  marks.push(s.marks);
+for(const sub in subjectTotals){
 
-  const gradeInfo = getCbcGrade(s.marks);
+  const avgMark = Math.round(subjectTotals[sub] / subjectCounts[sub]);
+  const gradeInfo = getCbcGrade(avgMark);
+
+  totalMarks += avgMark;
+  subjectCount++;
+
   totalPoints += gradeInfo.points;
 
-  studentSummary.innerHTML += `
-    <p>
-      <strong>${s.subject}</strong> :
-      ${s.marks}% |
-      ${gradeInfo.level} |
-      ${gradeInfo.performance} |
-      <strong>${gradeInfo.points} pts</strong>
-    </p>
-  `;
+  labels.push(sub);
+  marks.push(avgMark);
+window.currentSubjects.push({
+name: sub,
+score: avgMark
 });
-  const avg = Math.round(total / r.subjects.length);
-  // SAVE CURRENT STUDENT DATA FOR SMS
-window.currentStudentAverage = avg;
-const overallGrade = getCbcGrade(avg);
-window.currentStudentRemark = overallGrade.performance;
-window.currentResultApproved = true; // because we only load APPROVED results here
-
-  studentSummary.innerHTML += `
-  <hr>
-  <p><strong>Total Marks:</strong> ${total}</p>
-  <p><strong>Average:</strong> ${avg}%</p>
-  
-  <hr>
-  <p><strong>CBC Points Summary</strong></p>
-  <p><strong>Total CBC Points:</strong> ${totalPoints} / ${r.subjects.length * 8}</p>
-  <p style="font-size:13px;color:#555;">
-    CBC points are used for placement and learner guidance only.
-  </p>
+studentSummary.innerHTML+=`
+<p>
+<strong>${sub}</strong> :
+${avgMark}% |
+${gradeInfo.level} |
+${gradeInfo.performance} |
+<strong>${gradeInfo.points} pts</strong>
+</p>
 `;
 
-  if (studentChartInstance) studentChartInstance.destroy();
-
-  studentChartInstance = new Chart(studentChart.getContext("2d"), {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: `${studentName} Performance`,
-        data: marks,
-        backgroundColor: colors
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        y: { beginAtZero: true, max: 100 }
-      }
-    }
-  });
 }
+
+const avg = subjectCount ? Math.round(totalMarks / subjectCount) : 0;
+window.currentAverage = avg;
+window.currentStudentName = admissionNo;
+window.currentClass = cls;
+window.currentAssessment = assessment;
+window.currentStudentAverage=avg;
+const studentQuery = query(
+collection(db,"students"),
+where("admissionNo","==",admissionNo),
+where("class","==",cls)
+);
+
+const studentSnap = await getDocs(studentQuery);
+
+if(!studentSnap.empty){
+const s = studentSnap.docs[0].data();
+
+window.currentAdmissionNo = s.admissionNo || "";
+window.currentParentPhone = s.phone || "";
+}
+
+const overallGrade=getCbcGrade(avg);
+
+window.currentStudentRemark=overallGrade.performance;
+
+const classQuery=query(
+collection(db,"results"),
+where("class","==",cls),
+where("year","==",year),
+where("term","==",term),
+where("assessment","==",assessment),
+where("status","==","APPROVED")
+);
+
+const classSnap=await getDocs(classQuery);
+
+const studentAverages={};
+
+classSnap.forEach(d=>{
+
+const r=d.data();
+
+if(!studentAverages[r.student]){
+studentAverages[r.student]={total:0,count:0};
+}
+
+r.subjects.forEach(s=>{
+studentAverages[r.student].total+=s.marks;
+studentAverages[r.student].count+=1;
+});
+  });
+
+const ranking=[];
+
+for(const stu in studentAverages){
+
+const avgMark=Math.round(
+studentAverages[stu].total/studentAverages[stu].count
+);
+
+ranking.push({
+name:stu,
+avg:avgMark
+});
+
+}
+
+ranking.sort((a,b)=> (b.avg || 0) - (a.avg || 0));
+
+let position = ranking.findIndex(s => s.name === admissionNo) + 1;
+window.currentStudentPosition = position;
+window.currentClassSize = ranking.length;
+if(position === 0){
+position = "-";
+}
+let totalStudents=ranking.length;
+window.currentStudentPosition = position;
+window.currentClassSize = totalStudents;
+let teacherComment = "—";
+let headComment = "—";
+
+snap.forEach(d=>{
+  const r = d.data();
+
+  if(r.teacherComment) teacherComment = r.teacherComment;
+  if(r.headComment) headComment = r.headComment;
+});
+
+window.currentTeacherComment = teacherComment;
+window.currentHeadComment = headComment;
+
+studentSummary.innerHTML+=`
+
+<hr>
+
+<h3>Term Summary</h3>
+
+<p><strong>Total Marks:</strong> ${totalMarks}</p>
+
+<p><strong>Final Average:</strong> ${avg}%</p>
+
+<p><strong>Position:</strong> ${position} / ${totalStudents}</p>
+
+<p><strong>CBC Performance:</strong> ${overallGrade.performance}</p>
+
+<hr>
+
+<p><strong>Teacher Comment:</strong> ${teacherComment}</p>
+
+<p><strong>Headteacher Comment:</strong> ${headComment}</p>
+
+<hr>
+
+<p><strong>CBC Points:</strong> ${totalPoints} / ${(labels.length || 1)*4}</p>
+
+`;
+
+if(studentChartInstance){
+studentChartInstance.destroy();
+studentChartInstance = null;
+}
+
+studentChartInstance = new Chart(
+studentChart.getContext("2d"),
+{
+type:"bar",
+data:{
+labels:labels,
+datasets:[{
+label:`${admissionNo} Performance`,
+data:marks,
+backgroundColor:[
+"#0d6efd",
+"#198754",
+"#ffc107",
+"#dc3545",
+"#6f42c1",
+"#20c997",
+"#fd7e14"
+],
+borderWidth:1
+}]
+},
+options:{
+animation:false,
+responsive:true,
+plugins:{
+legend:{
+display:true
+}
+},
+scales:{
+y:{
+beginAtZero:true,
+max:100
+}
+}
+}
+}
+);
+
+// await loadAssessmentProgress(studentName,cls,term,year);
+// updateSmsButtons();
+
+}
+
 function toggleClass(id){
+
   const el = document.getElementById(id);
-  el.style.display = el.style.display === "none" ? "block" : "none";
+
+  if(!el) return;
+
+  if(el.style.display === "none" || el.style.display === ""){
+    el.style.display = "block";
+  }else{
+    el.style.display = "none";
+  }
+
+}
+// ===== STUDENT NAME CACHE =====
+let studentNameCache = {};
+
+async function loadStudentNames(){
+
+const snap = await getDocs(collection(db,"students"));
+
+snap.forEach(docSnap=>{
+const data = docSnap.data();
+studentNameCache[data.admissionNo] = data.name;
+});
+
 }
 // ===== GET ADMISSION NUMBER (TOP-LEVEL) =====
 async function getAdmissionNumber(studentName, cls){
@@ -786,34 +1481,81 @@ async function getAdmissionNumber(studentName, cls){
 
   return snap.docs[0].data().admissionNo || "";
 }
-// ===== GET PARENT PHONE (TOP-LEVEL) =====
-async function getParentPhone(studentName, cls){
-  const q = query(
-    collection(db,"students"),
-    where("name","==",studentName),
-    where("class","==",cls)
-  );
+// ===== GET PARENT PHONE =====
+async function getParentPhone(admissionNo, cls){
 
-  const snap = await getDocs(q);
-  if(snap.empty) return "";
+const q = query(
+collection(db,"students"),
+where("admissionNo","==",admissionNo),
+where("class","==",cls)
+);
 
-  return snap.docs[0].data().phone || "";
+const snap = await getDocs(q);
+
+if(snap.empty){
+console.log("Student not found:", admissionNo);
+return "";
+}
+
+return snap.docs[0].data().phone || "";
+}
+// ===== SAVE TEACHER + HEAD COMMENTS =====
+async function saveComments(student, cls, term, year){
+
+const teacherComment = document.getElementById("teacherComment").value;
+const headComment = document.getElementById("headComment").value;
+
+const q = query(
+collection(db,"results"),
+where("student","==",student),
+where("class","==",cls),
+where("term","==",term),
+where("year","==",year)
+);
+
+const snap = await getDocs(q);
+
+for(const d of snap.docs){
+await updateDoc(doc(db,"results",d.id),{
+teacherComment: teacherComment,
+headComment: headComment
+});
+}
+
 }
 window.printResultSlip = async function(){
 
   const cls = resultsClassSelect.value;
-  const student = resultsStudentSelect.value;
-  const term = resultsTermSelect.value;
-  const year = resultsYearSelect.value;
+const assessment = window.currentAssessment;
+const admissionNo = resultsStudentSelect.value;
 
-  const admissionNo = await getAdmissionNumber(student, cls);
+const fullText =
+document.getElementById("resultsStudentSelect").selectedOptions[0].text;
+
+window.currentStudentName = fullText.split(" - ")[1] || admissionNo;
+
+const term = resultsTermSelect.value;
+const year = resultsYearSelect.value;
+
+/* ADD THESE TWO LINES */
+const teacherComment =
+document.getElementById("teacherComment")?.value || "—";
+
+const headComment =
+document.getElementById("headComment")?.value || "—";
+
+if(teacherComment || headComment){
+   await saveComments(admissionNo, cls, term, year);
+}
+
+if (!cls || !admissionNo || !term || !year){
+   alert("Select Class, Student, Term and Year");
+   return;
+}
+
+  const progressChart = document.getElementById("progressChart");
+const content = document.getElementById("studentSummary").innerHTML + (progressChart ? progressChart.outerHTML : "");
   
-  if (!cls || !student || !term || !year) {
-    alert("Select Class, Student, Term and Year");
-    return;
-  }
-
-  const content = document.getElementById("studentSummary").innerHTML;
   if (!content.trim()) {
     alert("No student result to print");
     return;
@@ -821,254 +1563,485 @@ window.printResultSlip = async function(){
 
   const today = new Date().toLocaleDateString();
   const printWindow = window.open("", "", "width=900,height=650");
+let subjectRows = "";
+let totalMarks = 0;
 
+if(window.currentSubjects){
+
+window.currentSubjects.forEach(function(s){
+
+const mark = Number(s.score || s.marks || 0);
+const grade = getCbcGrade(mark);
+
+totalMarks += mark;
+
+subjectRows += "<tr>" +
+"<td>" + s.name + "</td>" +
+"<td>" + mark + "</td>" +
+"<td>" + grade.performance + "</td>" +
+"<td>" + grade.points + "</td>" +
+"</tr>";
+
+});
+
+}
   printWindow.document.write(`
-    <html>
-    <head>
-      <title>Result Slip</title>
-      <style>
-        body { font-family: Arial; padding: 20px; }
-        .header { text-align: center; }
-        .header img { height: 90px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #000; padding: 6px; text-align: center; }
-        .footer { margin-top: 40px; display: flex; justify-content: space-between; }
-        .signature { border-top: 1px solid #000; width: 200px; text-align: center; }
-        
-      </style>
-    </head>
-
-    <body>
-      <div class="header">
-        <img src="https://i.ibb.co/rK3pvG23/1000020144.jpg">
-        <h2>BETANIA SCHOOL</h2>
-        <strong>MOTTO: KNOWLEDGE WITH CONSCIENCE</strong><br>
-        CONTACT: 0793 845 653 — Emali / Kajiado
-      </div>
-
-      <hr>
-
-      <p><strong>Student:</strong> ${student}</p>
-<p><strong>Admission No:</strong> ${admissionNo}</p>
-<p><strong>Class:</strong> ${cls}</p>
-      <p><strong>Term:</strong> ${term} | <strong>Year:</strong> ${year}</p>
-
-      ${content}
-
-      <div class="footer">
-        <div class="signature">Headteacher</div>
-        <div class="signature">Date: ${today}</div>
-      </div>
-    </body>
-    </html>
-  `);
-
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
-};
-// ===== EXPOSE FUNCTIONS TO HTML =====
-window.showSection = showSection;
-window.checkPin = checkPin;
-window.loadSubjects = loadSubjects;
-window.loadStudents = loadStudents;
-window.loadResults = loadResults;
-window.saveMarks = saveMarks;
-window.deleteStudent = deleteStudent;
-window.editStudent = editStudent;
-window.loadResultsStudents = loadResultsStudents;
-window.sendResultSMS = sendResultSMS;
-window.printResultSlip = printResultSlip;
-
-async function sendResultSMS(role){
-
-  // 🔐 HEADTEACHER PIN CHECK (ONLY FOR HEADTEACHER BUTTON)
-  if (role === "headteacher") {
-    const HEADTEACHER_PIN = "1234"; // change later if needed
-    const pin = prompt("Enter Headteacher PIN");
-
-    if (pin !== HEADTEACHER_PIN) {
-      alert("Wrong PIN. SMS not sent.");
-      return;
-    }
-  }
-
-  const student = resultsStudentSelect.value;
-  const cls = resultsClassSelect.value;
-  const year = resultsYearSelect.value;
-  const term = resultsTermSelect.value;
-
-  if(!student || !cls || !year || !term){
-    alert("Select class, student, term and year");
-    return;
-  }
-
-  const q = query(
-    collection(db,"results"),
-    where("student","==",student),
-    where("class","==",cls),
-    where("status","==","APPROVED")
-  );
-
-  const snap = await getDocs(q);
-  if(snap.empty){
-    alert("Approved result not found");
-    return;
-  }
-
-  const docRef = doc(db,"results", snap.docs[0].id);
-  const data = snap.docs[0].data();
-
-  // ⛔ IF SMS ALREADY SENT → STOP
-  if(data.smsSent === true){
-    alert("SMS already sent for this result.");
-    return;
-  }
-
-  const message =
-`BETANIA SCHOOL
-Student: ${student}
-ADM: ${window.currentAdmissionNo}
-Class: ${cls}
-Term: ${term} ${year}
-
-Average: ${window.currentStudentAverage}%
-CBC Remark: ${window.currentStudentRemark}`;
-
-  window.open(
-  "sms:" + window.currentParentPhone +
-  "?body=" + encodeURIComponent(message),
-  "_blank"
-);
-
-  await updateDoc(docRef,{ smsSent:true });
-updateSmsButtons();
-}
-function updateSmsButtons(){
-  const teacherBtn = document.getElementById("teacherSmsBtn");
-  const headBtn = document.getElementById("headSmsBtn");
-
-  if(window.currentSmsSent){
-    if(teacherBtn){
-      teacherBtn.disabled = true;
-      teacherBtn.innerText = "✔ SMS SENT";
-    }
-    if(headBtn){
-      headBtn.disabled = true;
-      headBtn.innerText = "✔ SMS SENT";
-    }
-  }
-}
-async function autoPromoteStudents(){
-  if(!confirm("Promote ALL students to next class?")) return;
-
-  const snap = await getDocs(collection(db,"students"));
-
-  for(const d of snap.docs){
-
-    const student = d.data();
-    let newClass = student.class;
-
-    if(student.class === "PP1") newClass = "PP2";
-    else if(student.class === "PP2") newClass = "Grade 1";
-    else if(student.class === "Grade 1") newClass = "Grade 2";
-    else if(student.class === "Grade 2") newClass = "Grade 3";
-    else if(student.class === "Grade 3") newClass = "Grade 4";
-    else if(student.class === "Grade 4") newClass = "Grade 5";
-    else if(student.class === "Grade 5") newClass = "Grade 6";
-    else if(student.class === "Grade 6") newClass = "Grade 7";
-    else if(student.class === "Grade 7") newClass = "Grade 8";
-    else if(student.class === "Grade 8") newClass = "Grade 9";
-    else continue;
-
-    await updateDoc(doc(db,"students",d.id),{
-      class: newClass
-    });
-  }
-
-  alert("All students promoted successfully!");
-  listStudents();
-}
-</script>
-<!-- ===== SPLASH + TITLE BAR (PREMIUM BLOCK) ===== -->
+<html>
+<head>
+<title>Result Slip</title>
 
 <style>
-/* ===== SPLASH SCREEN ===== */
-#splashScreen{
-  position:fixed;
-  inset:0;
-  background:linear-gradient(135deg,#0b5ed7,#198754);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  z-index:9999;
+
+body{
+font-family: Arial;
+padding:30px;
+-webkit-print-color-adjust: exact;
+print-color-adjust: exact;
 }
 
-.splash-content{
-  text-align:center;
-  color:#fff;
-  animation:splashAnim 2.2s ease forwards;
+/* HEADER */
+.header{
+display:grid;
+grid-template-columns:120px 1fr 120px;
+align-items:center;
 }
 
-.splash-content img{
-  width:130px;
-  margin-bottom:14px;
+.logo img{
+height:90px;
 }
 
-.splash-content h1{
-  font-size:26px;
-  font-weight:800;
-  letter-spacing:1px;
+.school-center{
+text-align:center;
 }
 
-.splash-content p{
-  font-size:14px;
-  opacity:0.9;
+.school-center h1{
+margin:0;
+font-size:28px;
+color:#1f3f75;
 }
 
-@keyframes splashAnim{
-  from{opacity:0; transform:scale(0.6);}
-  to{opacity:1; transform:scale(1);}
+.school-center p{
+margin:3px;
 }
 
-/* ===== TITLE BAR ===== */
-.title-bar{
-  position:sticky;
-  top:0;
-  z-index:1000;
-  display:flex;
-  align-items:center;
-  gap:14px;
-  padding:12px 16px;
-  background:#ffffff;
-  border-bottom:4px solid #0b5ed7;
-  box-shadow:0 4px 14px rgba(0,0,0,0.15);
+/* BLUE LINE */
+
+.line{
+border-top:3px solid #1f3f75;
+margin:15px 0;
 }
 
-.title-bar img{
-  width:55px;
-  height:55px;
-  border-radius:10px;
+/* REPORT TITLES */
+
+.report-main{
+text-align:center;
+font-size:22px;
+font-weight:bold;
 }
 
-.title-text h1{
-  margin:0;
-  font-size:18px;
-  font-weight:800;
+.report-sub{
+text-align:center;
+font-size:18px;
+color:#1f3f75;
+margin-top:5px;
 }
 
-.title-text .motto{
-  font-size:13px;
-  color:#198754;
-  font-weight:600;
+/* STUDENT INFO BOX */
+
+.info{
+width:100%;
+border-collapse:collapse;
+margin-top:20px;
 }
 
-.title-text .contact{
-  font-size:12px;
-  color:#555;
+.info td{
+border:1px solid #c7c7c7;
+padding:10px;
+font-size:15px;
 }
+
+/* SUBJECT TITLE BAR */
+
+.subject-title{
+color:#1f3f75;
+text-align:center;
+font-weight:bold;
+font-size:18px;
+margin-top:25px;
+margin-bottom:10px;
+letter-spacing:1px;
+}
+
+/* SUBJECT TABLE */
+
+table{
+width:100%;
+border-collapse:collapse;
+margin-top:10px;
+}
+
+th{
+background:#1f3f75 !important;
+color:#ffffff !important;
+padding:12px;
+text-align:center;
+font-weight:bold;
+border:1px solid #1f3f75;
+-webkit-print-color-adjust: exact;
+print-color-adjust: exact;
+}
+
+td{
+border:1px solid #999;
+padding:10px;
+text-align:center;
+}
+
+/* SUMMARY LINE */
+
+.summary{
+display:flex;
+justify-content:space-between;
+margin-top:10px;
+padding-top:10px;
+border-top:2px solid #999;
+}
+
+/* COMMENTS */
+
+.comment{
+margin-top:20px;
+border-top:1px solid #ccc;
+padding-top:10px;
+}
+
+/* SIGNATURES */
+
+.signatures{
+margin-top:60px;
+display:flex;
+justify-content:space-between;
+}
+
+.sign{
+border-top:1px solid black;
+width:220px;
+text-align:center;
+padding-top:5px;
+}
+
 </style>
 
+</head>
+
+<body>
+
+<div class="header">
+
+<div class="logo">
+<img src="https://i.ibb.co/rK3pvG23/1000020144.jpg">
+</div>
+
+<div class="school-center">
+<h1>BETANIA SCHOOL</h1>
+<p>MOTTO: KNOWLEDGE WITH CONSCIENCE</p>
+<p>CONTACT: 0793 845 653 — Emali / Kajiado</p>
+</div>
+
+<div></div>
+
+</div>
+
+<div class="line"></div>
+
+<div class="report-main">
+TERM REPORT SLIP — ${year}
+</div>
+
+<div class="report-sub">
+TERM ${term} — ${assessment}
+</div>
+
+<div class="line"></div>
+
+<table class="info">
+
+<tr>
+<td><b>Name:</b> ${window.currentStudentName}</td>
+<td><b>Admission No:</b> ${admissionNo}</td>
+</tr>
+
+<tr>
+<td><b>Class:</b> ${cls}</td>
+<td><b>Year:</b> ${year}</td>
+</tr>
+
+</table>
+
+<div class="subject-title">
+SUBJECT PERFORMANCE
+</div>
+
+<table>
+
+<tr>
+<th>Subject</th>
+<th>Marks</th>
+<th>CBC Level</th>
+<th>Points</th>
+</tr>
+
+${subjectRows}
+
+</table>
+
+<div class="summary">
+
+<div>
+<b>Total Marks:</b> ${totalMarks}
+</div>
+
+<div>
+<b>Average:</b> ${window.currentAverage}%
+</div>
+
+<div>
+<b>Position:</b> ${window.currentStudentPosition} out of ${window.currentClassSize}
+</div>
+
+</div>
+
+<div class="comment">
+<b>Class Teacher's Remarks:</b> ${teacherComment}
+</div>
+
+<div class="signatures">
+
+<div class="sign">
+Class Teacher
+</div>
+
+<div class="sign">
+Head Teacher
+</div>
+
+</div>
+
+</body>
+</html>
+`);
+
+printWindow.document.close();
+printWindow.focus();
+printWindow.print();
+};
+function clearResults(){
+
+  // clear student text
+  const summary = document.getElementById("studentSummary");
+  if(summary) summary.innerHTML = "";
+
+  // hide student chart
+  const chartContainer = document.getElementById("studentChartContainer");
+  if(chartContainer) chartContainer.style.display = "none";
+
+  // hide progress chart
+  const progressChart = document.getElementById("progressChart");
+  if(progressChart) progressChart.style.display = "none";
+
+  // hide student title
+  const studentTitle = document.getElementById("studentTitle");
+  if(studentTitle) studentTitle.style.display = "none";
+
+  // destroy charts if they exist
+  if(studentChartInstance){
+    studentChartInstance.destroy();
+    studentChartInstance = null;
+  }
+
+  if(classChartInstance){
+    classChartInstance.destroy();
+    classChartInstance = null;
+  }
+
+}
+function showSection(sectionId){
+
+  // reset results page when leaving it
+  if(sectionId !== "results"){
+
+    clearResults();
+
+    const classSelect = document.getElementById("resultsClassSelect");
+    const studentSelect = document.getElementById("resultsStudentSelect");
+    const assessSelect = document.getElementById("resultsAssessmentSelect");
+
+    if(classSelect) classSelect.value = "";
+    if(studentSelect) studentSelect.value = "";
+    if(assessSelect) assessSelect.value = "";
+
+  }
+
+  // hide all sections
+  const sections = document.querySelectorAll("section");
+
+  sections.forEach(sec=>{
+    sec.style.display = "none";
+  });
+
+  // show selected section
+  const target = document.getElementById(sectionId);
+
+  if(target){
+    target.style.display = "block";
+  }
+
+}
+async function handleClassChange(cls){
+
+  clearResults();   // ← ADD THIS LINE
+
+  if(!cls) return;
+
+  try{
+
+    await loadResultsStudents(cls);
+    await loadResults();
+
+  }catch(err){
+    console.error("Class change error:", err);
+  }
+
+}
+async function resetFilteredResults(){
+
+const year = document.getElementById("resetYear").value;
+const term = document.getElementById("resetTerm").value;
+const cls = document.getElementById("resetClass").value;
+const assessment = document.getElementById("resetAssessment").value;
+
+if(!year || !term || !cls){
+alert("Select Year, Term and Class");
+return;
+}
+
+if(!confirm("⚠ This will permanently delete the selected results. Continue?")){
+return;
+}
+
+try{
+
+let q;
+
+if(assessment){
+
+q = query(
+collection(db,"results"),
+where("year","==",year),
+where("term","==",term),
+where("class","==",cls),
+where("assessment","==",assessment)
+);
+
+}else{
+
+q = query(
+collection(db,"results"),
+where("year","==",year),
+where("term","==",term),
+where("class","==",cls)
+);
+
+}
+
+const snap = await getDocs(q);
+
+if(snap.empty){
+alert("No results found to delete");
+return;
+}
+
+for(const d of snap.docs){
+await deleteDoc(doc(db,"results",d.id));
+}
+
+alert("Results deleted successfully");
+
+}catch(err){
+console.error(err);
+alert("Error deleting results");
+}
+
+}
+async function loadClassSizes(){
+
+try{
+
+// load student names into cache
+await loadStudentNames();
+
+const snap = await getDocs(collection(db,"students"));
+
+const classCounts = {};
+
+snap.forEach(docSnap => {
+
+const data = docSnap.data();
+const cls = data.class || "Unknown";
+
+if(!classCounts[cls]){
+classCounts[cls] = 0;
+}
+
+classCounts[cls]++;
+
+});
+
+const order = [
+"PP1","PP2",
+"Grade 1","Grade 2","Grade 3",
+"Grade 4","Grade 5","Grade 6",
+"Grade 7","Grade 8","Grade 9"
+];
+
+let html = "<h4>Class Sizes</h4>";
+  order.forEach(cls=>{
+if(classCounts[cls]){
+html += `<p><strong>${cls}</strong>: ${classCounts[cls]} students</p>`;
+}
+});
+
+document.getElementById("classSizes").innerHTML = html;
+
+}catch(err){
+console.error("Class size error:",err);
+}
+
+}
+// ===== EXPOSE FUNCTIONS TO HTML =====
+
+// SPLASH
+window.showSection = showSection;
+window.saveMarks = saveMarks;
+window.loadResults = loadResults;
+window.drawStudentSummary = drawStudentSummary;
+window.drawClassSummary = drawClassSummary;
+window.handleClassChange = handleClassChange;
+window.toggleClass = toggleClass;
+window.sendResultSMS = sendResultSMS;
+// ADMIN FUNCTIONS
+window.addStudent = addStudent;
+window.autoPromoteStudents = autoPromoteStudents;
+window.resetFilteredResults = resetFilteredResults;
+window.checkPin = checkPin;
+window.editStudent = editStudent;
+window.deleteStudent = deleteStudent;
+window.listStudents = listStudents;
+window.loadStudents = loadStudents;
+window.loadClassSizes = loadClassSizes;
+window.loadResultsStudents = loadResultsStudents;
+window.clearResults = clearResults;
+</script>
 <!-- SPLASH -->
 <div id="splashScreen">
   <div class="splash-content">
@@ -1077,7 +2050,6 @@ async function autoPromoteStudents(){
     <p>Knowledge With Conscience</p>
   </div>
 </div>
-
 <!-- TITLE BAR -->
 <header class="title-bar">
   <img src="https://i.ibb.co/4ZbM8KnW/1000020144.jpg">
@@ -1087,23 +2059,30 @@ async function autoPromoteStudents(){
     <div class="contact">0793 845 653 · Emali / Kajiado</div>
   </div>
 </header>
-
 <script>
 window.addEventListener("load",()=>{
+
+  const splash = document.getElementById("splashScreen");
+
   setTimeout(()=>{
-    document.getElementById("splashScreen").style.display="none";
-  },2300);
+
+    splash.style.opacity="0";
+    splash.style.transition="opacity 0.6s";
+
+    setTimeout(()=>{
+      splash.style.display="none";
+    },600);
+
+  },2000);
+
 });
 </script>
 
-<!-- ===== END BLOCK ===== -->
-
-
-<nav>
-  <button onclick="showSection('home')">🏠 Home</button>
-  <button onclick="showSection('marks')">✏ Enter Marks</button>
-  <button onclick="showSection('results')">📊 Results</button>
-<button onclick="showSection('admin')">🔐 Admin</button>
+<nav id="mainNav">
+<button onclick="showSection('home')">🏠 Home</button>
+<button onclick="showSection('marks')">📝 Enter Marks</button>
+<button onclick="showSection('results')">📊 Results</button>
+<button onclick="showSection('admin')">⚙️ Admin</button>
 </nav>
 
 <!-- HOME -->
@@ -1184,11 +2163,14 @@ window.addEventListener("load",()=>{
 </select>
 
 <label>Student</label>
-<select id="studentSelect"></select>
+<select id="studentSelect">
+  <option value="">-- Select Student --</option>
+</select>
 
 <div id="subjectsArea"></div>
 
 <button onclick="saveMarks()">Save Marks</button>
+
 </div>
 </section>
 
@@ -1200,49 +2182,61 @@ window.addEventListener("load",()=>{
 
   <div class="form-grid">
 
-    <div class="form-group">
-      <label>Academic Year</label>
-      <select id="resultsYearSelect">
-        <option value="">-- Select Year --</option>
-        <option>2026</option>
-        <option>2027</option>
-        <option>2028</option>
-        <option>2029</option>
-        <option>2030</option>
-      </select>
-    </div>
+<div class="form-group">
+<label>Academic Year</label>
+<select id="resultsYearSelect" onchange="clearResults(); loadResults()">
+<option value="">-- Select Year --</option>
+<option>2026</option>
+<option>2027</option>
+<option>2028</option>
+<option>2029</option>
+<option>2030</option>
+</select>
+</div>
 
-    <div class="form-group">
-      <label>Term</label>
-      <select id="resultsTermSelect">
-        <option value="">-- Select Term --</option>
-        <option>Term 1</option>
-        <option>Term 2</option>
-        <option>Term 3</option>
-      </select>
-    </div>
+<div class="form-group">
+<label>Term</label>
+<select id="resultsTermSelect" onchange="loadResults()">
+<option value="">-- Select Term --</option>
+<option>Term 1</option>
+<option>Term 2</option>
+<option>Term 3</option>
+</select>
+</div>
 
-    <div class="form-group">
-      <label>Filter by Class</label>
-      <select id="resultsClassSelect"
-        onchange="loadResultsStudents(this.value); loadResults();">
-        <option value="">-- Select Class --</option>
-        <option>PP1</option><option>PP2</option>
-        <option>Grade 1</option><option>Grade 2</option><option>Grade 3</option>
-        <option>Grade 4</option><option>Grade 5</option><option>Grade 6</option>
-        <option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
-      </select>
-    </div>
+<div class="form-group">
+<label>Assessment</label>
+<select id="resultsAssessmentSelect" onchange="loadResults()">
+<option value="">All Assessments</option>
+<option>Assessment 1</option>
+<option>Assessment 2</option>
+<option>Assessment 3</option>
+<option>Assessment 4</option>
+<option>Assessment 5</option>
+<option>Assessment 6</option>
+</select>
+</div>
 
-    <div class="form-group">
-      <label>Select Student</label>
-      <select id="resultsStudentSelect"
-        onchange="loadResults()">
-        <option value="">-- All Students --</option>
-      </select>
-    </div>
+<div class="form-group">
+<label>Filter by Class</label>
+<select id="resultsClassSelect"
+onchange="clearResults(); handleClassChange(this.value)">
+<option value="">-- Select Class --</option>
+<option>PP1</option><option>PP2</option>
+<option>Grade 1</option><option>Grade 2</option><option>Grade 3</option>
+<option>Grade 4</option><option>Grade 5</option><option>Grade 6</option>
+<option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
+</select>
+</div>
 
-  </div>
+<div class="form-group">
+<label>Select Student</label>
+<select id="resultsStudentSelect"
+onchange="clearResults(); drawStudentSummary(resultsClassSelect.value,this.value)">
+<option value="">-- Select Student --</option>
+</select>
+</div>
+
 </div>
 
 <!-- ===== CLASS PERFORMANCE (DEFAULT VIEW) ===== -->
@@ -1257,16 +2251,37 @@ window.addEventListener("load",()=>{
     <h4>📊 Overall Performance</h4>
 
     <div id="bestSubject"></div>
-    <div id="bestStudent"></div>
+<div id="bestStudent"></div>
+
+<div id="topStudents"></div>
   </div>
 </div>
 
 <!-- ===== STUDENT PERFORMANCE (ON STUDENT SELECT) ===== -->
 <div class="card">
-  <h4 id="studentTitle" style="display:none;">Student Performance Summary</h4>
-  <canvas id="studentChart" height="200" style="display:none;"></canvas>
+<h4 id="studentTitle" style="display:none;color:#0d6efd;">
+📊 Student Performance Summary
+</h4>
+
+<div id="assessmentLabel" style="
+display:none;
+font-weight:bold;
+margin-bottom:8px;
+color:#198754;">
+</div>
+<div id="studentChartContainer" style="display:none;">
+  <canvas id="studentChart" height="200"></canvas>
+</div>
+<canvas id="progressChart" height="200" style="display:none;"></canvas>
   <div id="studentSummary"></div>
-  <button onclick="printResultSlip()" class="print-btn">
+
+<label>Teacher Comment</label>
+<input type="text" id="teacherComment" placeholder="Enter teacher comment">
+
+<label>Headteacher Comment</label>
+<input type="text" id="headComment" placeholder="Enter headteacher comment">
+
+<button onclick="printResultSlip()" class="print-btn">
   🖨️ Print Result Slip
 </button>
   
@@ -1283,7 +2298,6 @@ window.addEventListener("load",()=>{
 ">
 📩 Send SMS (Teacher)
 </button>
-
 <button id="headSmsBtn" onclick="sendResultSMS('headteacher')" style="
   background:#198754;
   color:white;
@@ -1339,15 +2353,62 @@ window.addEventListener("load",()=>{
 <button type="button" 
 onclick="autoPromoteStudents()" 
 style="background:#dc3545;color:white;margin-top:10px;">
-⬆ Auto Promote All Students
+⚡ Auto Promote All Students
+</button>
+
+<h4>Reset Results (Safe)</h4>
+
+<select id="resetYear">
+<option value="">Select Year</option>
+<option>2026</option>
+<option>2027</option>
+<option>2028</option>
+<option>2029</option>
+<option>2030</option>
+</select>
+
+<select id="resetTerm">
+<option value="">Select Term</option>
+<option>Term 1</option>
+<option>Term 2</option>
+<option>Term 3</option>
+</select>
+
+<select id="resetClass">
+<option value="">Select Class</option>
+<option>PP1</option>
+<option>PP2</option>
+<option>Grade 1</option>
+<option>Grade 2</option>
+<option>Grade 3</option>
+<option>Grade 4</option>
+<option>Grade 5</option>
+<option>Grade 6</option>
+<option>Grade 7</option>
+<option>Grade 8</option>
+<option>Grade 9</option>
+</select>
+
+<select id="resetAssessment">
+<option value="">All Assessments</option>
+<option>Assessment 1</option>
+<option>Assessment 2</option>
+<option>Assessment 3</option>
+<option>Assessment 4</option>
+<option>Assessment 5</option>
+<option>Assessment 6</option>
+</select>
+
+<button onclick="resetFilteredResults()" 
+style="background:#dc3545;color:white;padding:10px;border:none;border-radius:5px;">
+⚠ Reset Selected Results
 </button>
 <h4>Registered Students</h4>
+<div id="classSizes"></div>
 <div id="studentList"></div>
 
 </div> <!-- adminPanel -->
 </section> <!-- admin -->
 
 </body>
-
-</html>
-  
+  </html>

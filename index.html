@@ -230,16 +230,25 @@ const firebaseConfig = {
   authDomain: "betania-school.firebaseapp.com",
   projectId: "betania-school",
 };
+
+
 let isLoadingResults = false;
+
+let resultsCache = [];   // ⚡ RESULTS CACHE
+
 const app = initializeApp(firebaseConfig);
 window.db = getFirestore(app);
+
 const ADMIN_PIN="7625";
 
 
 const CBC={
 PP:["Language","Math Activities","Environmental","Creative"],
 G1_3:["English","Kiswahili","Mathematics","Environmental","Creative Arts","Religious Education"],
-G4_6:["English","Kiswahili","Mathematics","Science & Tech","Social Studies","Agriculture","Religious Education"],
+G4_6:["English","Kiswahili","Mathematics",
+"Science & Tech","Social Studies",
+"Agriculture","Religious Education",
+"Creative Arts & Sports"],
 G7_9:["English","Kiswahili","Mathematics","Integrated Science","Social Studies","Agriculture","Pre-Technical Studies","Religious Education","Pastoral Religious Instruction","Creative Arts & Sports"]
 };
 function getCbcGrade(mark){
@@ -325,16 +334,20 @@ async function loadStudents(cls){
 
     const snap = await getDocs(q);
 
-    if(snap.empty){
-      console.log("No students found");
-      return;
-    }
+/* ⚡ SAVE RESULTS IN CACHE */
+resultsCache = snap.docs.map(doc => doc.data());
 
-    snap.forEach(docSnap=>{
+if(snap.empty){
+  console.log("No students found");
+  isLoadingResults = false;
+  return;
+}
 
-      const s = docSnap.data();
+snap.forEach(docSnap=>{
 
-      const option = document.createElement("option");
+  const s = docSnap.data();
+
+  const option = document.createElement("option");
 
       option.value = s.admissionNo;   // unique id
       option.textContent = `${s.admissionNo} - ${s.name}`;
@@ -353,6 +366,12 @@ async function loadResults(){
 
 if(isLoadingResults) return;
 isLoadingResults = true;
+
+if(resultsCache.length > 0){
+   drawResults(resultsCache);
+   isLoadingResults = false;
+   return;
+}
 
 const year = document.getElementById("resultsYearSelect").value;
 const term = document.getElementById("resultsTermSelect").value;
@@ -408,6 +427,14 @@ isLoadingResults = false;
 
 async function sendResultSMS(type){
 
+// 🔐 Admin PIN protection
+const pin = prompt("Enter Admin PIN to send SMS");
+
+if(pin !== ADMIN_PIN){
+alert("❌ Incorrect Admin PIN");
+return;
+}
+
 const studentAdm = resultsStudentSelect.value;
 const cls = resultsClassSelect.value;
 
@@ -430,15 +457,10 @@ alert("Parent phone number not found");
 return;
 }
 
-let comment = "";
-
-if(type === "teacher"){
-comment = document.getElementById("teacherComment").value || window.currentTeacherComment;
-}
-
-if(type === "headteacher"){
-comment = document.getElementById("headComment").value || window.currentHeadComment;
-}
+const comment =
+document.getElementById("resultComment").value ||
+window.currentComment ||
+"";
 
 // SUBJECT SHORT NAMES
 const shortNames = {
@@ -511,7 +533,10 @@ TOP 3: ${top3Text}
 SUBJECTS
 ${subjectText}
 
-CBC POINTS:${totalPoints}`;
+CBC POINTS:${totalPoints}
+
+COMMENT:
+${comment}`;
 window.location.href =
 "sms:" + phone + "?body=" + encodeURIComponent(message);
 
@@ -854,6 +879,9 @@ await addDoc(collection(db,"results"),{
   createdAt: serverTimestamp()
 });
 
+/* ⚡ CLEAR CACHE SO NEW DATA LOADS */
+resultsCache = [];
+
 alert("Results saved successfully");
 
 // ===== RESET ENTER MARKS FORM =====
@@ -863,7 +891,7 @@ document.getElementById("assessmentSelect").selectedIndex = 0;
 document.getElementById("classSelect").selectedIndex = 0;
 document.getElementById("studentSelect").selectedIndex = 0;
 
-  document.getElementById("subjectsArea").innerHTML = "";
+document.getElementById("subjectsArea").innerHTML = "";
 
 }
 function checkPin(){
@@ -971,7 +999,6 @@ async function getStudentName(adm){
   const snap = await getDocs(q);
 
   if(snap.empty) return adm;
-
   return snap.docs[0].data().name;
 
 }
@@ -1326,7 +1353,8 @@ r.subjects.forEach(s=>{
 studentAverages[r.student].total+=s.marks;
 studentAverages[r.student].count+=1;
 });
-  });
+
+});
 
 const ranking=[];
 
@@ -1456,7 +1484,7 @@ function toggleClass(id){
 
 }
 // ===== STUDENT NAME CACHE =====
-let studentNameCache = {};
+  let studentNameCache = {};
 
 async function loadStudentNames(){
 
@@ -1523,14 +1551,17 @@ headComment: headComment
 }
 
 }
-window.printResultSlip = async function(){
+window.printResultSlip = function(){
 
   const cls = resultsClassSelect.value;
 const assessment = window.currentAssessment;
 const admissionNo = resultsStudentSelect.value;
 
-const fullText =
-document.getElementById("resultsStudentSelect").selectedOptions[0].text;
+const studentSelect = document.getElementById("resultsStudentSelect");
+
+const fullText = studentSelect.selectedOptions.length
+  ? studentSelect.selectedOptions[0].text
+  : admissionNo;
 
 window.currentStudentName = fullText.split(" - ")[1] || admissionNo;
 
@@ -1539,13 +1570,10 @@ const year = resultsYearSelect.value;
 
 /* ADD THESE TWO LINES */
 const teacherComment =
-document.getElementById("teacherComment")?.value || "—";
+document.getElementById("resultComment")?.value || "—";
 
-const headComment =
-document.getElementById("headComment")?.value || "—";
-
-if(teacherComment || headComment){
-   await saveComments(admissionNo, cls, term, year);
+if(teacherComment){
+   saveComments(admissionNo, cls, term, year);
 }
 
 if (!cls || !admissionNo || !term || !year){
@@ -1553,13 +1581,11 @@ if (!cls || !admissionNo || !term || !year){
    return;
 }
 
-  const progressChart = document.getElementById("progressChart");
-const content = document.getElementById("studentSummary").innerHTML + (progressChart ? progressChart.outerHTML : "");
-  
-  if (!content.trim()) {
-    alert("No student result to print");
-    return;
-  }
+
+  if(!window.currentSubjects || window.currentSubjects.length === 0){
+  alert("No student result to print");
+  return;
+}
 
   const today = new Date().toLocaleDateString();
   const printWindow = window.open("", "", "width=900,height=650");
@@ -1600,6 +1626,7 @@ print-color-adjust: exact;
 }
 
 /* HEADER */
+
 .header{
 display:grid;
 grid-template-columns:120px 1fr 120px;
@@ -1832,8 +1859,11 @@ Head Teacher
 `);
 
 printWindow.document.close();
-printWindow.focus();
-printWindow.print();
+
+setTimeout(function(){
+  printWindow.focus();
+  printWindow.print();
+},500);
 };
 function clearResults(){
 
@@ -2005,7 +2035,8 @@ const order = [
 ];
 
 let html = "<h4>Class Sizes</h4>";
-  order.forEach(cls=>{
+
+order.forEach(cls=>{
 if(classCounts[cls]){
 html += `<p><strong>${cls}</strong>: ${classCounts[cls]} students</p>`;
 }
@@ -2015,9 +2046,8 @@ document.getElementById("classSizes").innerHTML = html;
 
 }catch(err){
 console.error("Class size error:",err);
-}
-
-}
+  }
+  }
 // ===== EXPOSE FUNCTIONS TO HTML =====
 
 // SPLASH
@@ -2275,38 +2305,24 @@ color:#198754;">
 <canvas id="progressChart" height="200" style="display:none;"></canvas>
   <div id="studentSummary"></div>
 
-<label>Teacher Comment</label>
-<input type="text" id="teacherComment" placeholder="Enter teacher comment">
-
-<label>Headteacher Comment</label>
-<input type="text" id="headComment" placeholder="Enter headteacher comment">
+<label>Comment</label>
+<input type="text" id="resultComment" placeholder="Enter comment">
 
 <button onclick="printResultSlip()" class="print-btn">
   🖨️ Print Result Slip
 </button>
   
 </div>
-<button id="teacherSmsBtn" onclick="sendResultSMS('teacher')" style="
-  background:#0d6efd;
-  color:white;
-  padding:10px;
-  width:100%;
-  border:none;
-  border-radius:5px;
-  margin-top:10px;
-  font-weight:bold;
-">
-📩 Send SMS (Teacher)
-</button>
+
 <button id="headSmsBtn" onclick="sendResultSMS('headteacher')" style="
-  background:#198754;
-  color:white;
-  padding:10px;
-  width:100%;
-  border:none;
-  border-radius:5px;
-  margin-top:8px;
-  font-weight:bold;
+background:#198754;
+color:white;
+padding:10px;
+width:100%;
+border:none;
+border-radius:5px;
+margin-top:8px;
+font-weight:bold;
 ">
 📩 Send SMS (Headteacher)
 </button>
@@ -2411,4 +2427,4 @@ style="background:#dc3545;color:white;padding:10px;border:none;border-radius:5px
 </section> <!-- admin -->
 
 </body>
-  </html>
+</html>

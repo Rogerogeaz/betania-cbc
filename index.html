@@ -989,7 +989,7 @@ option.textContent = s.admissionNo + " - " + s.name;
   }
 
 }
-async function getStudentName(adm){
+  async function getStudentName(adm){
 
   const q = query(
     collection(db,"students"),
@@ -999,6 +999,7 @@ async function getStudentName(adm){
   const snap = await getDocs(q);
 
   if(snap.empty) return adm;
+
   return snap.docs[0].data().name;
 
 }
@@ -1484,7 +1485,7 @@ function toggleClass(id){
 
 }
 // ===== STUDENT NAME CACHE =====
-  let studentNameCache = {};
+let studentNameCache = {};
 
 async function loadStudentNames(){
 
@@ -1604,7 +1605,7 @@ totalMarks += mark;
 subjectRows += "<tr>" +
 "<td>" + s.name + "</td>" +
 "<td>" + mark + "</td>" +
-"<td>" + grade.performance + "</td>" +
+"<td>" + grade.level + " - " + grade.performance + "</td>" +
 "<td>" + grade.points + "</td>" +
 "</tr>";
 
@@ -1760,7 +1761,6 @@ padding-top:5px;
 </style>
 
 </head>
-
 <body>
 
 <div class="header">
@@ -2046,8 +2046,9 @@ document.getElementById("classSizes").innerHTML = html;
 
 }catch(err){
 console.error("Class size error:",err);
-  }
-  }
+}
+
+}
 // ===== EXPOSE FUNCTIONS TO HTML =====
 
 // SPLASH

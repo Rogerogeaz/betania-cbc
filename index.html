@@ -127,9 +127,10 @@ select, input{
 }
 
 button{
-  margin-top:15px;
+  margin-top:10px;
   padding:12px;
   width:100%;
+  font-size:15px;
   border:none;
   border-radius:8px;
   background:#198754;
@@ -225,6 +226,7 @@ import {
   getFirestore,
   collection,
   addDoc,
+setDoc,
   getDocs,
   getDoc,   // ✅ ADD THIS LINE
   query,
@@ -507,21 +509,18 @@ let top3Text = "";
 
 top3Text = top3.map(s=>{
   const short = shortNames[s.name] || s.name;
-  return `${short} ${s.score}`;
+  return `${short} ${s.score || s.marks || 0}`;
 }).join(" | ");
 
 subjects.forEach(s=>{
 
   const short = shortNames[s.name] || s.name;
 
-  const mark = s.score || 0;
+  const mark = s.score || s.marks || 0;
 
   // calculate CBC points
-  let pts = 1;
-
-  if(mark >= 75) pts = 4;
-  else if(mark >= 50) pts = 3;
-  else if(mark >= 25) pts = 2;
+  const grade = getCbcGrade(mark);
+const pts = grade.points;
 
   subjectText += `${short}:${mark}(${pts}) `;
 
@@ -554,6 +553,23 @@ COMMENT:
 ${comment}`;
 window.location.href =
 "sms:" + phone + "?body=" + encodeURIComponent(message);
+
+// 🔒 LOCK RESULT AFTER SMS
+const q = query(
+  collection(db,"results"),
+  where("student","==",studentAdm),
+  where("class","==",cls),
+  where("term","==",resultsTermSelect.value),
+  where("year","==",resultsYearSelect.value)
+);
+
+const snap = await getDocs(q);
+
+for(const d of snap.docs){
+  await updateDoc(doc(db,"results",d.id),{
+    smsSent: true
+  });
+}
 
 }
 async function calculatePosition(cls, term, year, student){
@@ -597,7 +613,7 @@ const size = students.length;
 /* GET THE REAL NAME */
 window.currentStudentName = students.find(s => s.student === student)?.name || student;
 
-let position = students.findIndex(s=> s.admissionNo === admissionNo) + 1;
+let position = students.findIndex(s => s.student === student) + 1;
 
 window.currentStudentPosition = position;
 window.currentClassSize = size;
@@ -779,11 +795,11 @@ document.getElementById("studentList").innerHTML = html;
 
 async function saveMarks(){
 
-const year = yearSelect.value;
-const term = termSelect.value;
-const student = studentSelect.value;
-const cls = classSelect.value;
-const assessment = assessmentSelect.value;
+const student = document.getElementById("studentSelect").value;
+const cls = document.getElementById("classSelect").value;
+const year = document.getElementById("yearSelect").value;
+const term = document.getElementById("termSelect").value;
+const assessment = document.getElementById("assessmentSelect").value;
 
 // ===== COLLECT SUBJECT MARKS =====
 const subjects = [];
@@ -812,6 +828,7 @@ document.querySelectorAll("#subjectsArea input").forEach(i => {
 });
 
 // ===== PREVENT EMPTY VALUES =====
+  
 if(!cls){
   alert("Please select a class");
   return;
@@ -869,7 +886,12 @@ if(subjects.length === 0){
   alert("Please enter marks for at least one subject.");
   return;
 }
-
+// prevent NaN or empty values
+subjects.forEach(s=>{
+  if(isNaN(s.marks)){
+    s.marks = 0;
+  }
+});
 // ===== SAVE TO FIRESTORE =====
 // ===== SAVE OR UPDATE =====
 
@@ -888,22 +910,24 @@ if(window.editingResultId){
 
 }else{
 
-  await addDoc(collection(db,"results"),{
-    student,
-    class: cls,
-    year,
-    term,
-    assessment,
-    subjects,
-    status: "APPROVED",
-    teacherSmsAllowed: true,
-    smsSent: false,
-    termCompleted: assessment === "Assessment 6",
-    createdAt: serverTimestamp()
-  });
+  const resultId = `${student}_${cls}_${year}_${term}_${assessment}`;
 
-  
-}
+await setDoc(doc(db,"results", resultId), {
+  student: student,
+  class: cls,
+  year: year,
+  term: term,
+  assessment: assessment,
+
+  subjects: subjects, // ✅ saves ALL subjects together
+
+  status: "APPROVED",
+  teacherSmsAllowed: true,
+  smsSent: false,
+  termCompleted: assessment === "Assessment 6",
+
+  createdAt: serverTimestamp()
+});
 
 /* ⚡ CLEAR CACHE SO NEW DATA LOADS */
 resultsCache = [];
@@ -920,6 +944,8 @@ document.getElementById("studentSelect").selectedIndex = 0;
 document.getElementById("subjectsArea").innerHTML = "";
 
 }
+
+} // ✅ CLOSE saveMarks FUNCTION
 function checkPin(){
   if(adminPin.value === ADMIN_PIN){
     adminLogin.style.display = "none";
@@ -928,7 +954,8 @@ function checkPin(){
   }else{
     pinError.innerText = "Wrong PIN";
   }
-}window.checkPin = checkPin;
+}
+window.checkPin = checkPin;
 async function deleteStudent(id){
   if(!confirm("Delete this student?")) return;
   await deleteDoc(doc(db,"students",id));
@@ -1226,7 +1253,8 @@ async function drawStudentSummary(cls, admissionNo){
 
 window.currentAssessment =
 document.getElementById("resultsAssessmentSelect").value || "Overall";
-window.currentStudentName = admissionNo;
+const studentName = await getStudentName(admissionNo);
+window.currentStudentName = studentName;
 window.currentClass = cls;
 
 const studentTitle = document.getElementById("studentTitle");
@@ -1278,9 +1306,17 @@ snap.forEach(d=>{
 const r = d.data();
 
 window.currentAssessment = r.assessment || "-";
-window.currentSubjects = r.subjects || [];
+window.currentSubjects = r.subjects || [{
+  subject: r.subject,
+  marks: r.marks
+}];
 
-r.subjects.forEach(s=>{
+const subjectsArray = r.subjects || [{
+  subject: r.subject,
+  marks: r.marks
+}];
+
+subjectsArray.forEach(s=>{
 
 if(!subjectTotals[s.subject]){
 subjectTotals[s.subject] = 0;
@@ -1314,9 +1350,10 @@ for(const sub in subjectTotals){
   labels.push(sub);
   marks.push(avgMark);
 window.currentSubjects.push({
-name: sub,
-score: avgMark
+  subject: sub,
+  marks: avgMark
 });
+
 studentSummary.innerHTML+=`
 <p>
 <strong>${sub}</strong> :
@@ -1331,7 +1368,6 @@ ${gradeInfo.performance} |
 
 const avg = subjectCount ? Math.round(totalMarks / subjectCount) : 0;
 window.currentAverage = avg;
-window.currentStudentName = admissionNo;
 window.currentClass = cls;
 window.currentAssessment = assessment;
 window.currentStudentAverage=avg;
@@ -1373,9 +1409,8 @@ const r=d.data();
 
 if(!studentAverages[r.student]){
 studentAverages[r.student]={total:0,count:0};
-}
-
-r.subjects.forEach(s=>{
+  }
+  r.subjects.forEach(s=>{
 studentAverages[r.student].total+=s.marks;
 studentAverages[r.student].count+=1;
 });
@@ -1400,6 +1435,7 @@ avg:avgMark
 ranking.sort((a,b)=> (b.avg || 0) - (a.avg || 0));
 
 let position = ranking.findIndex(s => s.name === admissionNo) + 1;
+if(position <= 0) position = "-";
 window.currentStudentPosition = position;
 window.currentClassSize = ranking.length;
 if(position === 0){
@@ -1529,6 +1565,7 @@ async function getAdmissionNumber(studentName, cls){
     where("name","==",studentName),
     where("class","==",cls)
   );
+
   const snap = await getDocs(q);
   if(snap.empty) return "";
 
@@ -1621,7 +1658,8 @@ if(window.currentSubjects){
 
 window.currentSubjects.forEach(function(s){
 
-const mark = Number(s.score || s.marks || 0);
+const mark = Number(s.marks || 0);
+
 const grade = getCbcGrade(mark);
 
 totalMarks += mark;
@@ -1629,7 +1667,7 @@ totalMarks += mark;
 subjectRows += `
 <tr>
 <td style="border:1px solid #999;padding:8px;">${s.subject}</td>
-<td style="border:1px solid #999;padding:8px;text-align:center;">${s.marks}</td>
+<td style="border:1px solid #999;padding:8px;text-align:center;">${mark}</td>
 <td style="border:1px solid #999;padding:8px;text-align:center;">
 ${grade.level} - ${grade.performance}
 </td>
@@ -1638,7 +1676,6 @@ ${grade.points}
 </td>
 </tr>
 `;
-
 });
 
 }
@@ -2101,8 +2138,7 @@ win.print();
 },500);
 
 };
-
-function generateSlipHTML(r, subjectRows, totalMarks, avg){
+  function generateSlipHTML(r, subjectRows, totalMarks, avg){
 
 return `
 <html>
@@ -2151,6 +2187,7 @@ td{
 </head>
 
 <body>
+
 <div style="page-break-after:always;">
 
 <div style="display:flex;align-items:center;gap:15px;">
@@ -2178,7 +2215,7 @@ ${r.term} — ${r.assessment ? r.assessment : "Assessment 1"}
 <table style="border:1px solid black;">
 <tr>
 <td style="border:1px solid #ccc;padding:8px;text-align:left;">
-<b>Name:</b> ${studentNameCache[r.student] || r.student}
+<b>Name:</b> ${studentNameCache[r.student] || r.name || r.student}
 </td>
 <td style="border:1px solid #ccc;padding:8px;text-align:left;">
 <b>Admission No:</b> ${r.student}
@@ -2312,12 +2349,12 @@ async function handleClassChange(cls){
 }
 async function resetFilteredResults(){
 
-const year = document.getElementById("resetYear").value;
-const term = document.getElementById("resetTerm").value;
-const cls = document.getElementById("resetClass").value;
-const assessment = document.getElementById("resetAssessment").value;
+let resetYear = document.getElementById("resetYear").value;
+let resetTerm = document.getElementById("resetTerm").value;
+let resetClass = document.getElementById("resetClass").value;
+let resetAssessment = document.getElementById("resetAssessment").value;
 
-if(!year || !term || !cls){
+if(!resetYear || !resetTerm || !resetClass){
 alert("Select Year, Term and Class");
 return;
 }
@@ -2334,19 +2371,19 @@ if(assessment){
 
 q = query(
 collection(db,"results"),
-where("year","==",year),
-where("term","==",term),
-where("class","==",cls),
-where("assessment","==",assessment)
+where("year","==",resetYear),
+where("term","==",resetTerm),
+where("class","==",resetClass),
+where("assessment","==",resetAssessment)
 );
 
 }else{
 
 q = query(
 collection(db,"results"),
-where("year","==",year),
-where("term","==",term),
-where("class","==",cls)
+where("year","==",resetYear),
+where("term","==",resetTerm),
+where("class","==",resetClass)
 );
 
 }
@@ -2362,6 +2399,7 @@ for(const d of snap.docs){
 await deleteDoc(doc(db,"results",d.id));
 }
 
+resultsCache = [];
 alert("Results deleted successfully");
 
 }catch(err){
@@ -2483,7 +2521,6 @@ window.editMarks = async function(){
 
   alert("Now edit marks and click SAVE again");
 };
-
 </script>
 <!-- SPLASH -->
 <div id="splashScreen">
@@ -2738,7 +2775,8 @@ margin-top:8px;
 font-weight:bold;">
 🖨️ Print All Student Slips
 </button>
-  <button onclick="printClassSummary()" style="
+
+<button onclick="printClassSummary()" style="
 background:#6f42c1;
 color:white;
 padding:10px;
@@ -2863,6 +2901,6 @@ style="background:#dc3545;color:white;padding:10px;border:none;border-radius:5px
 </div> <!-- adminPanel -->
 </section> <!-- admin -->
 
+
 </body>
-  </html>
-  
+</html>

@@ -659,8 +659,7 @@ return;
 
 }
 // ===== SAVE OR UPDATE =====
-
-if(window.editingStudentId){
+  if(window.editingStudentId){
 
   await updateDoc(
     doc(db,"students",window.editingStudentId),
@@ -828,7 +827,6 @@ document.querySelectorAll("#subjectsArea input").forEach(i => {
 });
 
 // ===== PREVENT EMPTY VALUES =====
-  
 if(!cls){
   alert("Please select a class");
   return;
@@ -851,21 +849,25 @@ if(!year || !term){
 
 
 // ===== PREVENT DUPLICATE ASSESSMENT =====
-const duplicateQuery = query(
-  collection(db,"results"),
-  where("student","==",student),
-  where("class","==",cls),
-  where("year","==",year),
-  where("term","==",term),
-  where("assessment","==",assessment),
-  where("status","==","APPROVED")
-);
+// ===== PREVENT DUPLICATE ONLY WHEN ADDING NEW =====
+if(!window.editingResultId){
 
-const duplicateSnap = await getDocs(duplicateQuery);
+  const duplicateQuery = query(
+    collection(db,"results"),
+    where("student","==",student),
+    where("class","==",cls),
+    where("year","==",year),
+    where("term","==",term),
+    where("assessment","==",assessment)
+  );
 
-if(!duplicateSnap.empty){
+  const duplicateSnap = await getDocs(duplicateQuery);
+
+if(!duplicateSnap.empty && !window.editingResultId){
   alert("This assessment has already been entered for this student.");
   return;
+}
+
 }
 
 
@@ -1248,8 +1250,7 @@ borderWidth:1
 }
 
 // ===== GRADE CALCULATION =====
-
-async function drawStudentSummary(cls, admissionNo){
+  async function drawStudentSummary(cls, admissionNo){
 
 window.currentAssessment =
 document.getElementById("resultsAssessmentSelect").value || "Overall";
@@ -1409,8 +1410,9 @@ const r=d.data();
 
 if(!studentAverages[r.student]){
 studentAverages[r.student]={total:0,count:0};
-  }
-  r.subjects.forEach(s=>{
+}
+
+r.subjects.forEach(s=>{
 studentAverages[r.student].total+=s.marks;
 studentAverages[r.student].count+=1;
 });
@@ -1868,65 +1870,71 @@ setTimeout(function(){
 },500);
 };
 window.printAllStudentSlips = async function(){
-await loadStudentNames();
-const cls = resultsClassSelect.value;
-const term = resultsTermSelect.value;
-const year = resultsYearSelect.value;
 
-if(!cls || !term || !year){
-  alert("Select Class, Term and Year");
-  return;
-}
+  await loadStudentNames();
 
-const q = query(
-collection(db,"results"),
-where("class","==",cls),
-where("term","==",term),
-where("year","==",year),
-where("status","==","APPROVED")
-);
+  const cls = resultsClassSelect.value;
+  const term = resultsTermSelect.value;
+  const year = resultsYearSelect.value;
 
-const snap = await getDocs(q);
+  if(!cls || !term || !year){
+    alert("Select Class, Term and Year");
+    return;
+  }
 
-if(snap.empty){
-  alert("No results found");
-  return;
-}
-let ranking = [];
+  const q = query(
+    collection(db,"results"),
+    where("class","==",cls),
+    where("term","==",term),
+    where("year","==",year),
+    where("status","==","APPROVED")
+  );
 
-snap.forEach(d=>{
-  const data = d.data();
+  const snap = await getDocs(q);
 
-  let total = 0;
-  (data.subjects || []).forEach(s=>{
-    total += s.marks;
+  if(snap.empty){
+    alert("No results found");
+    return;
+  }
+
+  let ranking = [];
+
+  snap.forEach(d=>{
+    const data = d.data();
+
+    let total = 0;
+    (data.subjects || []).forEach(s=>{
+      total += s.marks;
+    });
+
+    const avg = Math.round(total / (data.subjects.length || 1));
+
+    ranking.push({
+      id: d.id,
+      avg: avg
+    });
   });
 
-  const avg = Math.round(total / (data.subjects.length || 1));
+  // SORT DESC
+  ranking.sort((a,b)=> b.avg - a.avg);
 
-  ranking.push({
-    id: d.id,
-    avg: avg
-  });
-});
+  let allHTML = "";
 
-// SORT DESCENDING
-ranking.sort((a,b)=> b.avg - a.avg);
-for(const d of snap.docs){
+  for(const d of snap.docs){
 
-  const r = d.data();
+    const r = d.data();
 
-  const position = ranking.findIndex(x => x.id === d.id) + 1;
-  const classSize = ranking.length;
+    const position = ranking.findIndex(x => x.id === d.id) + 1;
+    const classSize = ranking.length;
 
-  let subjectRows = "";
-  let totalMarks = 0;
+    let subjectRows = "";
+    let totalMarks = 0;
 
-  (r.subjects || []).forEach(s=>{
-    const grade = getCbcGrade(s.marks);
-    totalMarks += s.marks;
+    (r.subjects || []).forEach(s=>{
+      const grade = getCbcGrade(s.marks);
+      totalMarks += s.marks;
 
-    subjectRows += `
+      subjectRows += `
 <tr>
 <td style="border:1px solid #999;padding:8px;">${s.subject}</td>
 <td style="border:1px solid #999;padding:8px;text-align:center;">${s.marks}</td>
@@ -1937,32 +1945,38 @@ ${grade.level} - ${grade.performance}
 ${grade.points}
 </td>
 </tr>`;
-  });
+    });
 
-  const avg = Math.round(totalMarks / (r.subjects.length || 1));
+    const avg = Math.round(totalMarks / (r.subjects.length || 1));
 
-  // 🔥 OPEN NEW WINDOW PER STUDENT
-  const win = window.open("", "", "width=900,height=650");
-
-  win.document.write(
-    generateSlipHTML(
+    allHTML += generateSlipHTML(
       { ...r, position, classSize },
       subjectRows,
       totalMarks,
       avg
-    )
-  );
+    );
+  }
+
+  // ✅ ONE WINDOW ONLY
+  const win = window.open("", "", "width=900,height=650");
+
+  win.document.write(`
+    <html>
+    <head><title>All Student Slips</title></head>
+    <body>
+      ${allHTML}
+    </body>
+    </html>
+  `);
 
   win.document.close();
 
   setTimeout(()=>{
     win.print();
-  },300);
-
-}
+  },500);
 
 };
-window.printClassSummary = async function(){
+  window.printClassSummary = async function(){
 
 const cls = resultsClassSelect.value;
 const term = resultsTermSelect.value;
@@ -2138,7 +2152,8 @@ win.print();
 },500);
 
 };
-  function generateSlipHTML(r, subjectRows, totalMarks, avg){
+
+function generateSlipHTML(r, subjectRows, totalMarks, avg){
 
 return `
 <html>
@@ -2490,7 +2505,6 @@ window.editMarks = async function(){
     alert("Select all fields first");
     return;
   }
-
   const q = query(
     collection(db,"results"),
     where("student","==",student),

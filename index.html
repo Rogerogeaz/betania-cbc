@@ -575,11 +575,12 @@ for(const d of snap.docs){
 async function calculatePosition(cls, term, year, student){
 
 const q = query(
-collection(db,"results"),
-where("class","==",cls),
-where("term","==",term),
-where("year","==",year),
-where("status","==","APPROVED")
+  collection(db,"results"),
+  where("class","==",cls),
+  where("term","==",term),
+  where("year","==",year),
+  where("assessment","==",assessment), // ✅ ADD THIS LINE
+  where("status","==","APPROVED")
 );
 
 const snap = await getDocs(q);
@@ -659,7 +660,8 @@ return;
 
 }
 // ===== SAVE OR UPDATE =====
-  if(window.editingStudentId){
+
+if(window.editingStudentId){
 
   await updateDoc(
     doc(db,"students",window.editingStudentId),
@@ -791,8 +793,7 @@ html += `
 document.getElementById("studentList").innerHTML = html;
 
 }
-
-async function saveMarks(){
+  async function saveMarks(){
 
 const student = document.getElementById("studentSelect").value;
 const cls = document.getElementById("classSelect").value;
@@ -1063,7 +1064,10 @@ async function drawClassSummary(cls){
 
     const year = document.getElementById("resultsYearSelect").value;
     const term = document.getElementById("resultsTermSelect").value;
-
+const assessment = document.getElementById("resultsAssessmentSelect").value;
+if(!cls || !year || !term || !assessment){
+  return;
+}
     const statsDiv = document.getElementById("classStats");
     const bestSubjectEl = document.getElementById("bestSubject");
     const bestStudentEl = document.getElementById("bestStudent");
@@ -1073,12 +1077,13 @@ async function drawClassSummary(cls){
     bestStudentEl.innerHTML = "";
 
     const q = query(
-      collection(db,"results"),
-      where("class","==",cls),
-      where("year","==",year),
-      where("term","==",term),
-      where("status","==","APPROVED")
-    );
+  collection(db,"results"),
+  where("class","==",cls),
+  where("term","==",term),
+  where("year","==",year),
+  where("assessment","==",assessment), // ✅ ADD THIS LINE
+  where("status","==","APPROVED")
+);
 
     const snap = await getDocs(q);
 
@@ -1250,7 +1255,8 @@ borderWidth:1
 }
 
 // ===== GRADE CALCULATION =====
-  async function drawStudentSummary(cls, admissionNo){
+
+async function drawStudentSummary(cls, admissionNo){
 
 window.currentAssessment =
 document.getElementById("resultsAssessmentSelect").value || "Overall";
@@ -1270,10 +1276,12 @@ document.getElementById("studentChartContainer").style.display = "block";
 studentChart.height = 200;
 
 studentSummary.innerHTML = "";
-
-const year = document.getElementById("resultsYearSelect").value;
+  const year = document.getElementById("resultsYearSelect").value;
 const term = document.getElementById("resultsTermSelect").value;
-const assessment = resultsAssessmentSelect.value;
+const assessment = document.getElementById("resultsAssessmentSelect").value;
+if(!cls || !year || !term || !assessment){
+  return;
+}
 
 const assessmentDiv = document.getElementById("assessmentLabel");
 
@@ -1284,14 +1292,30 @@ if(assessment){
   assessmentDiv.style.display = "none";
 }
 
-const q = query(
-collection(db,"results"),
-where("class","==",cls),
-where("student","==",admissionNo),
-where("year","==",year),
-where("term","==",term),
-where("status","==","APPROVED")
-);
+let q;
+
+if(assessment){
+  // ✅ ONLY selected assessment
+  q = query(
+    collection(db,"results"),
+    where("class","==",cls),
+    where("student","==",admissionNo),
+    where("year","==",year),
+    where("term","==",term),
+    where("assessment","==",assessment),
+    where("status","==","APPROVED")
+  );
+}else{
+  // ✅ FULL TERM (ALL assessments)
+  q = query(
+    collection(db,"results"),
+    where("class","==",cls),
+    where("student","==",admissionNo),
+    where("year","==",year),
+    where("term","==",term),
+    where("status","==","APPROVED")
+  );
+}
 
 const snap = await getDocs(q);
 
@@ -1861,8 +1885,7 @@ ${subjectRows}
 </body>
 </html>
 `);
-
-printWindow.document.close();
+  printWindow.document.close();
 
 setTimeout(function(){
   printWindow.focus();
@@ -1874,21 +1897,23 @@ window.printAllStudentSlips = async function(){
   await loadStudentNames();
 
   const cls = resultsClassSelect.value;
-  const term = resultsTermSelect.value;
-  const year = resultsYearSelect.value;
+const term = resultsTermSelect.value;
+const year = resultsYearSelect.value;
+const assessment = resultsAssessmentSelect.value; // ✅ ADD THIS
 
-  if(!cls || !term || !year){
-    alert("Select Class, Term and Year");
-    return;
-  }
+if(!cls || !term || !year || !assessment){
+  alert("Select Class, Term, Year and Assessment");
+  return;
+}
 
   const q = query(
-    collection(db,"results"),
-    where("class","==",cls),
-    where("term","==",term),
-    where("year","==",year),
-    where("status","==","APPROVED")
-  );
+  collection(db,"results"),
+  where("class","==",cls),
+  where("term","==",term),
+  where("year","==",year),
+  where("assessment","==",assessment), // ✅ ADD THIS
+  where("status","==","APPROVED")
+);
 
   const snap = await getDocs(q);
 
@@ -1976,23 +2001,24 @@ ${grade.points}
   },500);
 
 };
-  window.printClassSummary = async function(){
+window.printClassSummary = async function(){
 
 const cls = resultsClassSelect.value;
 const term = resultsTermSelect.value;
 const year = resultsYearSelect.value;
+const assessment = resultsAssessmentSelect.value; // ✅ ONLY ONE
 
-if(!cls || !term || !year){
-  alert("Select Class, Term and Year");
+if(!cls || !term || !year || !assessment){
   return;
 }
 
 const q = query(
-collection(db,"results"),
-where("class","==",cls),
-where("term","==",term),
-where("year","==",year),
-where("status","==","APPROVED")
+  collection(db,"results"),
+  where("class","==",cls),
+  where("term","==",term),
+  where("year","==",year),
+  where("assessment","==",assessment), // ✅ ADD THIS LINE
+  where("status","==","APPROVED")
 );
 
 const snap = await getDocs(q);
@@ -2348,7 +2374,9 @@ function showSection(sectionId){
 }
 async function handleClassChange(cls){
 
-  clearResults();   // ← ADD THIS LINE
+  console.log("CLASS CHANGED:", cls); // ✅ DEBUG LINE
+
+  clearResults();
 
   if(!cls) return;
 
@@ -2357,6 +2385,13 @@ async function handleClassChange(cls){
     await loadResultsStudents(cls);
     await loadResults();
 
+    // ✅ FORCE SHOW CLASS SUMMARY
+    document.getElementById("classSummary").style.display = "block";
+    document.getElementById("classChart").style.display = "block";
+
+    // ✅ CALL CLASS SUMMARY FUNCTION
+    await drawClassSummary(cls);
+
   }catch(err){
     console.error("Class change error:", err);
   }
@@ -2364,66 +2399,62 @@ async function handleClassChange(cls){
 }
 async function resetFilteredResults(){
 
-let resetYear = document.getElementById("resetYear").value;
-let resetTerm = document.getElementById("resetTerm").value;
-let resetClass = document.getElementById("resetClass").value;
-let resetAssessment = document.getElementById("resetAssessment").value;
+  let resetYear = document.getElementById("resetYear").value;
+  let resetTerm = document.getElementById("resetTerm").value;
+  let resetClass = document.getElementById("resetClass").value;
+  let resetAssessment = document.getElementById("resetAssessment").value;
 
-if(!resetYear || !resetTerm || !resetClass){
-alert("Select Year, Term and Class");
-return;
-}
+  if(!resetYear || !resetTerm || !resetClass){
+    alert("Select Year, Term and Class");
+    return;
+  }
 
-if(!confirm("⚠ This will permanently delete the selected results. Continue?")){
-return;
-}
+  if(!confirm("⚠ This will permanently delete the selected results. Continue?")){
+    return;
+  }
 
-try{
+  try{
 
-let q;
+    let q;
 
-if(assessment){
+    if(resetAssessment){
+      q = query(
+        collection(db,"results"),
+        where("year","==",resetYear),
+        where("term","==",resetTerm),
+        where("class","==",resetClass),
+        where("assessment","==",resetAssessment)
+      );
+    } else {
+      q = query(
+        collection(db,"results"),
+        where("year","==",resetYear),
+        where("term","==",resetTerm),
+        where("class","==",resetClass)
+      );
+    }
 
-q = query(
-collection(db,"results"),
-where("year","==",resetYear),
-where("term","==",resetTerm),
-where("class","==",resetClass),
-where("assessment","==",resetAssessment)
-);
+    const snap = await getDocs(q);
 
-}else{
+    if(snap.empty){
+      alert("No results found to delete");
+      return;
+    }
 
-q = query(
-collection(db,"results"),
-where("year","==",resetYear),
-where("term","==",resetTerm),
-where("class","==",resetClass)
-);
+    for(const d of snap.docs){
+      await deleteDoc(doc(db,"results",d.id));
+    }
 
-}
+    resultsCache = [];
+    alert("Results deleted successfully");
 
-const snap = await getDocs(q);
+  } catch(err){
+    console.error(err);
+    alert("Error deleting results");
+  }
 
-if(snap.empty){
-alert("No results found to delete");
-return;
-}
-
-for(const d of snap.docs){
-await deleteDoc(doc(db,"results",d.id));
-}
-
-resultsCache = [];
-alert("Results deleted successfully");
-
-}catch(err){
-console.error(err);
-alert("Error deleting results");
-}
-
-}
-async function loadClassSizes(){
+  }
+  async function loadClassSizes(){
 
 try{
 
@@ -2472,6 +2503,7 @@ console.error("Class size error:",err);
 // ===== EXPOSE FUNCTIONS TO HTML =====
 
 // SPLASH
+
 window.showSection = showSection;
 window.saveMarks = saveMarks;
 window.loadResults = loadResults;
@@ -2505,6 +2537,7 @@ window.editMarks = async function(){
     alert("Select all fields first");
     return;
   }
+
   const q = query(
     collection(db,"results"),
     where("student","==",student),
@@ -2704,7 +2737,7 @@ window.addEventListener("load",()=>{
 <div class="form-group">
 <label>Assessment</label>
 <select id="resultsAssessmentSelect" onchange="loadResults()">
-<option value="">All Assessments</option>
+<option value="">-- Select Assessment --</option>
 <option>Assessment 1</option>
 <option>Assessment 2</option>
 <option>Assessment 3</option>
